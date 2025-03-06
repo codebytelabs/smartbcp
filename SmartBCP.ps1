@@ -16,52 +16,28 @@ param (
     [switch]$DetailedLogging
 )
 
-#
-# DEFINE MODULE PATHS
-#
-# This script expects to be in the SmartBCP folder with a subfolder called "Modules"
-# that contains all the module files.
-#
-
-# Get the directory where this script is located
+# Get the directory of this script
 $scriptDir = $PSScriptRoot
-if ([string]::IsNullOrEmpty($scriptDir)) {
+if (-not $scriptDir) {
     $scriptDir = (Get-Location).Path
 }
 
 Write-Host "Script directory: $scriptDir"
 
-# Define paths to all module files
-$moduleDir = Join-Path -Path $scriptDir -ChildPath "Modules"
-$configModulePath = Join-Path -Path $moduleDir -ChildPath "Configuration-Enhanced.psm1"
-$constraintsModulePath = Join-Path -Path $moduleDir -ChildPath "Constraints.psm1"
-$tableInfoModulePath = Join-Path -Path $moduleDir -ChildPath "TableInfo.psm1"
-$dataMovementModulePath = Join-Path -Path $moduleDir -ChildPath "DataMovement.psm1"
-$loggingModulePath = Join-Path -Path $moduleDir -ChildPath "Logging.psm1"
-
-# Verify all modules exist
-if (-not (Test-Path -Path $configModulePath)) { 
-    throw "Module not found: $configModulePath" 
+# Import modules with simple, direct paths
+try {
+    Write-Host "Importing modules..."
+    Import-Module "$scriptDir\Modules\Configuration-Enhanced.psm1" -Force
+    Import-Module "$scriptDir\Modules\Constraints.psm1" -Force
+    Import-Module "$scriptDir\Modules\TableInfo.psm1" -Force
+    Import-Module "$scriptDir\Modules\DataMovement.psm1" -Force
+    Import-Module "$scriptDir\Modules\Logging.psm1" -Force
+    Write-Host "All modules imported successfully."
+} 
+catch {
+    Write-Error "Failed to import modules: $_"
+    exit 1
 }
-if (-not (Test-Path -Path $constraintsModulePath)) { 
-    throw "Module not found: $constraintsModulePath" 
-}
-if (-not (Test-Path -Path $tableInfoModulePath)) { 
-    throw "Module not found: $tableInfoModulePath" 
-}
-if (-not (Test-Path -Path $dataMovementModulePath)) { 
-    throw "Module not found: $dataMovementModulePath" 
-}
-if (-not (Test-Path -Path $loggingModulePath)) { 
-    throw "Module not found: $loggingModulePath" 
-}
-
-# Import modules
-Import-Module -Name $configModulePath -Force
-Import-Module -Name $constraintsModulePath -Force
-Import-Module -Name $tableInfoModulePath -Force
-Import-Module -Name $dataMovementModulePath -Force
-Import-Module -Name $loggingModulePath -Force
 
 function Start-SmartBcp {
     [CmdletBinding()]
@@ -217,9 +193,9 @@ function Start-SmartBcp {
                 $partitionLabel = if ($partitionInfo.IsPartitioned) { "partition $partition" } else { "single partition" }
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
-                # Prepare full module paths for the background job
-                $dataMovementModulePath = Join-Path -Path $moduleDir -ChildPath "DataMovement.psm1"
-                $loggingModulePath = Join-Path -Path $moduleDir -ChildPath "Logging.psm1"
+                # Define module paths for the background job - using the global script directory
+                $dataMovementModulePath = "$scriptDir\Modules\DataMovement.psm1"
+                $loggingModulePath = "$scriptDir\Modules\Logging.psm1"
                 
                 Write-SmartBcpLog -Message "DataMovement module path: $dataMovementModulePath" -Level "INFO" -LogFile $LogFile
                 Write-SmartBcpLog -Message "Logging module path: $loggingModulePath" -Level "INFO" -LogFile $LogFile
