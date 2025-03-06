@@ -16,22 +16,42 @@ param (
     [switch]$DetailedLogging
 )
 
-# Get the directory of this script
-$scriptDir = $PSScriptRoot
-if (-not $scriptDir) {
+# Get the directory where this script is located (using $PSScriptRoot)
+if ($PSScriptRoot) {
+    $scriptDir = $PSScriptRoot
+} else {
     $scriptDir = (Get-Location).Path
 }
 
+# Log current paths for debugging
 Write-Host "Script directory: $scriptDir"
 
-# Import modules with simple, direct paths
+# Define full module paths - this ensures consistency
+$modulePaths = @{
+    ConfigModule = "$scriptDir\Modules\Configuration-Enhanced.psm1"
+    ConstraintsModule = "$scriptDir\Modules\Constraints.psm1" 
+    TableInfoModule = "$scriptDir\Modules\TableInfo.psm1"
+    DataMovementModule = "$scriptDir\Modules\DataMovement.psm1"
+    LoggingModule = "$scriptDir\Modules\Logging.psm1"
+}
+
+# Validate that all modules exist
+foreach ($key in $modulePaths.Keys) {
+    $path = $modulePaths[$key]
+    if (-not (Test-Path -Path $path)) {
+        Write-Error "Module not found: $path"
+        exit 1
+    }
+}
+
+# Import modules
 try {
     Write-Host "Importing modules..."
-    Import-Module "$scriptDir\Modules\Configuration-Enhanced.psm1" -Force
-    Import-Module "$scriptDir\Modules\Constraints.psm1" -Force
-    Import-Module "$scriptDir\Modules\TableInfo.psm1" -Force
-    Import-Module "$scriptDir\Modules\DataMovement.psm1" -Force
-    Import-Module "$scriptDir\Modules\Logging.psm1" -Force
+    Import-Module -Name $modulePaths.ConfigModule -Force
+    Import-Module -Name $modulePaths.ConstraintsModule -Force
+    Import-Module -Name $modulePaths.TableInfoModule -Force
+    Import-Module -Name $modulePaths.DataMovementModule -Force
+    Import-Module -Name $modulePaths.LoggingModule -Force
     Write-Host "All modules imported successfully."
 } 
 catch {
@@ -48,6 +68,9 @@ function Start-SmartBcp {
         [Parameter(Mandatory = $false)]
         [string]$LogFile
     )
+    
+    # Use global module paths to ensure consistency
+    $localModulePaths = $modulePaths
     
     $startTime = Get-Date
     Write-SmartBcpLog -Message "Starting Smart BCP operation" -Level "INFO" -LogFile $LogFile
@@ -193,13 +216,15 @@ function Start-SmartBcp {
                 $partitionLabel = if ($partitionInfo.IsPartitioned) { "partition $partition" } else { "single partition" }
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
-                # Define module paths for the background job - using the global script directory
-                $dataMovementModulePath = "$scriptDir\Modules\DataMovement.psm1"
-                $loggingModulePath = "$scriptDir\Modules\Logging.psm1"
+                # These are the module paths we'll pass to the background job
+                $dataMovementPath = $localModulePaths.DataMovementModule
+                $loggingPath = $localModulePaths.LoggingModule
                 
-                Write-SmartBcpLog -Message "DataMovement module path: $dataMovementModulePath" -Level "INFO" -LogFile $LogFile
-                Write-SmartBcpLog -Message "Logging module path: $loggingModulePath" -Level "INFO" -LogFile $LogFile
+                # Log paths for debugging
+                Write-SmartBcpLog -Message "DataMovement module path: $dataMovementPath" -Level "INFO" -LogFile $LogFile
+                Write-SmartBcpLog -Message "Logging module path: $loggingPath" -Level "INFO" -LogFile $LogFile
                 
+                # Create job script block with complete module import
                 $jobParams = @{
                     ScriptBlock = {
                         param($srcServer, $srcDB, $table, $isPartitioned, $partitionFunc, $partitionCol, $partitionNum, 
@@ -211,6 +236,14 @@ function Start-SmartBcp {
                             # Import needed modules using the full paths passed from the parent script
                             Write-Host "Loading DataMovement from: $dataMovementPath"
                             Write-Host "Loading Logging from: $loggingPath"
+                            
+                            # Verify paths exist before importing
+                            if (-not (Test-Path -Path $dataMovementPath)) {
+                                throw "ERROR: DataMovement module not found at: $dataMovementPath"
+                            }
+                            if (-not (Test-Path -Path $loggingPath)) {
+                                throw "ERROR: Logging module not found at: $loggingPath"
+                            }
                             
                             Import-Module -Name $dataMovementPath -Force
                             Import-Module -Name $loggingPath -Force
@@ -237,7 +270,12 @@ function Start-SmartBcp {
                         }
                         catch {
                             $errorMessage = "Error processing {0} ({1}): {2}" -f $table, $partitionLabel, $_.Exception.Message
-                            Write-SmartBcpLog -Message $errorMessage -Level "ERROR" -LogFile $logFile
+                            # Try to use Write-SmartBcpLog if available, otherwise fall back to Write-Error
+                            if (Get-Command -Name Write-SmartBcpLog -ErrorAction SilentlyContinue) {
+                                Write-SmartBcpLog -Message $errorMessage -Level "ERROR" -LogFile $logFile
+                            } else {
+                                Write-Error $errorMessage
+                            }
                             return $false
                         }
                     }
@@ -246,7 +284,7 @@ function Start-SmartBcp {
                         $partitionInfo.PartitionFunction, $partitionInfo.PartitionColumn, $partition, 
                         $destServer, $destDB, $tempFolder, $batchSize, $LogFile,
                         $sourceAuth, $sourceUser, $sourcePass, $destAuth, $destUser, $destPass,
-                        $dataMovementModulePath, $loggingModulePath
+                        $dataMovementPath, $loggingPath
                     )
                 }
                 
@@ -276,7 +314,7 @@ function Start-SmartBcp {
             $stillRunning = @()
             foreach ($job in $runningJobs) {
                 if ($job.State -eq "Completed") {
-                    $result = Receive-Job -Job $job
+                    $result = Receive-Job -Job $job -ErrorAction SilentlyContinue
                     
                     if ($result -eq $true) {
                         $completedJobs++
@@ -290,7 +328,8 @@ function Start-SmartBcp {
                 } 
                 elseif ($job.State -eq "Failed") {
                     $failedJobs++
-                    Write-SmartBcpLog -Message "Job $($job.Id) failed with unhandled error: $($job.ChildJobs[0].JobStateInfo.Reason)" -Level "ERROR" -LogFile $LogFile
+                    $errorDetails = Receive-Job -Job $job -ErrorAction SilentlyContinue
+                    Write-SmartBcpLog -Message "Job $($job.Id) failed with unhandled error: $($job.ChildJobs[0].JobStateInfo.Reason) $errorDetails" -Level "ERROR" -LogFile $LogFile
                     Remove-Job -Job $job
                 }
                 else {
@@ -346,11 +385,11 @@ function Start-SmartBcp {
     }
     finally {
         # Clean up any leftover temp files
-        if (Test-Path -Path $tempFolder) {
-            $tempFiles = Get-ChildItem -Path $tempFolder -Filter "*.dat"
-            if ($tempFiles.Count -gt 0) {
+        if ($tempFolder -and (Test-Path -Path $tempFolder)) {
+            $tempFiles = Get-ChildItem -Path $tempFolder -Filter "*.dat" -ErrorAction SilentlyContinue
+            if ($tempFiles -and $tempFiles.Count -gt 0) {
                 Write-SmartBcpLog -Message "Cleaning up $($tempFiles.Count) temporary files" -Level "INFO" -LogFile $LogFile
-                Remove-Item -Path "$tempFolder\*.dat" -Force
+                Remove-Item -Path "$tempFolder\*.dat" -Force -ErrorAction SilentlyContinue
             }
         }
     }
