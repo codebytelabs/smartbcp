@@ -16,13 +16,13 @@ param (
     [switch]$DetailedLogging
 )
 
-# Import modules
-$modulePath = Join-Path -Path $PSScriptRoot -ChildPath "Modules"
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Configuration-Enhanced.psm1") -Force
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Constraints.psm1") -Force
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "TableInfo.psm1") -Force
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "DataMovement.psm1") -Force
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Logging.psm1") -Force
+# Import modules - using simple relative paths from current directory
+$modulePath = ".\Modules"
+Import-Module -Name "$modulePath\Configuration-Enhanced.psm1" -Force
+Import-Module -Name "$modulePath\Constraints.psm1" -Force
+Import-Module -Name "$modulePath\TableInfo.psm1" -Force
+Import-Module -Name "$modulePath\DataMovement.psm1" -Force
+Import-Module -Name "$modulePath\Logging.psm1" -Force
 
 function Start-SmartBcp {
     [CmdletBinding()]
@@ -178,16 +178,27 @@ function Start-SmartBcp {
                 $partitionLabel = if ($partitionInfo.IsPartitioned) { "partition $partition" } else { "single partition" }
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
+                # Prepare module paths for the background job
+                $dataMovementModulePath = "$modulePath\DataMovement.psm1"
+                $loggingModulePath = "$modulePath\Logging.psm1"
+                
+                Write-SmartBcpLog -Message "DataMovement module path: $dataMovementModulePath" -Level "INFO" -LogFile $LogFile
+                Write-SmartBcpLog -Message "Logging module path: $loggingModulePath" -Level "INFO" -LogFile $LogFile
+                
                 $jobParams = @{
                     ScriptBlock = {
                         param($srcServer, $srcDB, $table, $isPartitioned, $partitionFunc, $partitionCol, $partitionNum, 
                               $dstServer, $dstDB, $tmpFolder, $batchSz, $logFile, 
-                              $srcAuth, $srcUser, $srcPass, $dstAuth, $dstUser, $dstPass)
+                              $srcAuth, $srcUser, $srcPass, $dstAuth, $dstUser, $dstPass,
+                              $dataMovementPath, $loggingPath)
                         
                         try {
-                            # Import needed modules
-                            Import-Module -Name (Join-Path -Path $using:modulePath -ChildPath "DataMovement.psm1") -Force
-                            Import-Module -Name (Join-Path -Path $using:modulePath -ChildPath "Logging.psm1") -Force
+                            # Import needed modules using the full paths passed from the parent script
+                            Write-Host "Loading DataMovement from: $dataMovementPath"
+                            Write-Host "Loading Logging from: $loggingPath"
+                            
+                            Import-Module -Name $dataMovementPath -Force
+                            Import-Module -Name $loggingPath -Force
                             
                             $partitionLabel = if ($isPartitioned) { "partition $partitionNum" } else { "single partition" }
                             Write-SmartBcpLog -Message "Starting export of $table ($partitionLabel)" -Level "INFO" -LogFile $logFile
@@ -219,7 +230,8 @@ function Start-SmartBcp {
                         $sourceServer, $sourceDB, $table, $partitionInfo.IsPartitioned, 
                         $partitionInfo.PartitionFunction, $partitionInfo.PartitionColumn, $partition, 
                         $destServer, $destDB, $tempFolder, $batchSize, $LogFile,
-                        $sourceAuth, $sourceUser, $sourcePass, $destAuth, $destUser, $destPass
+                        $sourceAuth, $sourceUser, $sourcePass, $destAuth, $destUser, $destPass,
+                        $dataMovementModulePath, $loggingModulePath
                     )
                 }
                 
