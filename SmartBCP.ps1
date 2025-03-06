@@ -242,43 +242,57 @@ function Start-SmartBcp {
         
         Write-SmartBcpLog -Message "Starting parallel processing with $maxThreads threads for $totalJobs total jobs" -Level "INFO" -LogFile $LogFile
         
-        while ($jobQueue.Count -gt 0 -or $runningJobs.Count -gt 0) {
-            while ($jobQueue.Count -gt 0 -and $runningJobs.Count -lt $maxThreads) {
-                $jobParams = $jobQueue[0]
-                $jobQueue = $jobQueue[1..($jobQueue.Count-1)]
-                $job = Start-Job @jobParams
-                $runningJobs += $job
-                Write-SmartBcpLog -Message "Started job $($job.Id) - $($runningJobs.Count)/$maxThreads threads active" -Level "INFO" -LogFile $LogFile
+while ($jobQueue.Count -gt 0 -or $runningJobs.Count -gt 0) {
+    # Start new jobs if slots available
+    while ($jobQueue.Count -gt 0 -and $runningJobs.Count -lt $maxThreads) {
+        $jobParams = $jobQueue[0]
+        $jobQueue = $jobQueue[1..($jobQueue.Count-1)]
+        $job = Start-Job @jobParams
+        $runningJobs += $job
+        Write-SmartBcpLog -Message "Started job $($job.Id) - $($runningJobs.Count)/$maxThreads threads active" -Level "INFO" -LogFile $LogFile
+    }
+    
+    $stillRunning = @()
+    foreach ($job in $runningJobs) {
+        if ($job.State -eq "Completed") {
+            $result = Receive-Job -Job $job -ErrorAction SilentlyContinue
+            if ($result -eq $true) {
+                $completedJobs++
+                Write-SmartBcpLog -Message "Job $($job.Id) completed successfully ($completedJobs/$totalJobs)" -Level "SUCCESS" -LogFile $LogFile
             }
-            
-            $stillRunning = @()
-            foreach ($job in $runningJobs) {
-                if ($job.State -eq "Completed") {
-                    $result = Receive-Job -Job $job -ErrorAction SilentlyContinue
-                    if ($result -eq $true) {
-                        $completedJobs++
-                        Write-SmartBcpLog -Message "Job $($job.Id) completed successfully ($completedJobs/$totalJobs)" -Level "SUCCESS" -LogFile $LogFile
-                    } else {
-                        $failedJobs++
-                        Write-SmartBcpLog -Message "Job $($job.Id) failed ($failedJobs/$totalJobs)" -Level "ERROR" -LogFile $LogFile
-                    }
-                    Remove-Job -Job $job
-                }
-                elseif ($job.State -eq "Failed") {
-                    $failedJobs++
-                    $errorDetails = Receive-Job -Job $job -ErrorAction SilentlyContinue
-                    Write-SmartBcpLog -Message "Job $($job.Id) failed with unhandled error: $($job.ChildJobs[0].JobStateInfo.Reason) $errorDetails" -Level "ERROR" -LogFile $LogFile
-                    Remove-Job -Job $job
-                }
-                else {
-                    $stillRunning += $job
-                }
+            else {
+                $failedJobs++
+                Write-SmartBcpLog -Message "Job $($job.Id) failed ($failedJobs/$totalJobs)" -Level "ERROR" -LogFile $LogFile
             }
-            $runningJobs = $stillRunning
-            if ($runningJobs.Count -ge $maxThreads -or ($jobQueue.Count -eq 0 -and $runningJobs.Count -gt 0)) {
-                Start-Sleep -Seconds 2
-            }
+            Remove-Job -Job $job
         }
+        elseif ($job.State -eq "Failed") {
+            $failedJobs++
+            $errorDetails = Receive-Job -Job $job -ErrorAction SilentlyContinue
+            Write-SmartBcpLog -Message "Job $($job.Id) failed with unhandled error: $($job.ChildJobs[0].JobStateInfo.Reason) $errorDetails" -Level "ERROR" -LogFile $LogFile
+            Remove-Job -Job $job
+        }
+        else {
+            $stillRunning += $job
+        }
+    }
+    $runningJobs = $stillRunning
+    
+    # Detailed progress logging
+    if ($completedJobs -gt 0) {
+        $progressPct = [math]::Round(($completedJobs / $totalJobs * 100), 2)
+        $elapsed = (Get-Date) - $startTime
+        $avgJobTime = $elapsed.TotalSeconds / $completedJobs
+        $remainingJobs = $totalJobs - $completedJobs
+        $etaSeconds = [math]::Round($remainingJobs * $avgJobTime, 0)
+        $etaTime = [TimeSpan]::FromSeconds($etaSeconds)
+        Write-SmartBcpLog -Message "Progress: $progressPct% complete. Completed $completedJobs of $totalJobs jobs. Elapsed time: $elapsed. ETA: $etaTime." -Level "INFO" -LogFile $LogFile
+    }
+    
+    if ($runningJobs.Count -ge $maxThreads -or ($jobQueue.Count -eq 0 -and $runningJobs.Count -gt 0)) {
+        Start-Sleep -Seconds 2
+    }
+}
         
         Write-SmartBcpLog -Message "Recreating foreign key constraints" -Level "INFO" -LogFile $LogFile
         foreach ($constraint in $constraints) {
