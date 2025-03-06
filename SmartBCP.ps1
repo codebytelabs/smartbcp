@@ -16,13 +16,22 @@ param (
     [switch]$DetailedLogging
 )
 
-# Import modules - using simple relative paths from current directory
-$modulePath = ".\Modules"
-Import-Module -Name "$modulePath\Configuration-Enhanced.psm1" -Force
-Import-Module -Name "$modulePath\Constraints.psm1" -Force
-Import-Module -Name "$modulePath\TableInfo.psm1" -Force
-Import-Module -Name "$modulePath\DataMovement.psm1" -Force
-Import-Module -Name "$modulePath\Logging.psm1" -Force
+# Import modules - using absolute paths to ensure consistency
+$scriptDir = $PSScriptRoot
+if (-not $scriptDir) {
+    # If running from current directory, get the absolute path
+    $scriptDir = (Get-Location).Path
+}
+$modulePath = Join-Path -Path $scriptDir -ChildPath "Modules"
+
+# Log the module path for debugging
+Write-Host "Module path: $modulePath"
+
+Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Configuration-Enhanced.psm1") -Force
+Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Constraints.psm1") -Force
+Import-Module -Name (Join-Path -Path $modulePath -ChildPath "TableInfo.psm1") -Force
+Import-Module -Name (Join-Path -Path $modulePath -ChildPath "DataMovement.psm1") -Force
+Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Logging.psm1") -Force
 
 function Start-SmartBcp {
     [CmdletBinding()]
@@ -178,9 +187,9 @@ function Start-SmartBcp {
                 $partitionLabel = if ($partitionInfo.IsPartitioned) { "partition $partition" } else { "single partition" }
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
-                # Prepare module paths for the background job
-                $dataMovementModulePath = "$modulePath\DataMovement.psm1"
-                $loggingModulePath = "$modulePath\Logging.psm1"
+                # Prepare absolute module paths for the background job
+                $dataMovementModulePath = Join-Path -Path $modulePath -ChildPath "DataMovement.psm1"
+                $loggingModulePath = Join-Path -Path $modulePath -ChildPath "Logging.psm1"
                 
                 Write-SmartBcpLog -Message "DataMovement module path: $dataMovementModulePath" -Level "INFO" -LogFile $LogFile
                 Write-SmartBcpLog -Message "Logging module path: $loggingModulePath" -Level "INFO" -LogFile $LogFile
