@@ -186,8 +186,8 @@ function Start-SmartBcp {
                         
                         try {
                             # Import needed modules
-                            Import-Module -Name $using:modulePath\DataMovement.psm1 -Force
-                            Import-Module -Name $using:modulePath\Logging.psm1 -Force
+                            Import-Module -Name (Join-Path -Path $using:modulePath -ChildPath "DataMovement.psm1") -Force
+                            Import-Module -Name (Join-Path -Path $using:modulePath -ChildPath "Logging.psm1") -Force
                             
                             $partitionLabel = if ($isPartitioned) { "partition $partitionNum" } else { "single partition" }
                             Write-SmartBcpLog -Message "Starting export of $table ($partitionLabel)" -Level "INFO" -LogFile $logFile
