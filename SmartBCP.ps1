@@ -16,17 +16,26 @@ param (
     [switch]$DetailedLogging
 )
 
-# THE SIMPLEST POSSIBLE PATH HANDLING 
+# ULTRA SIMPLE PATH APPROACH: DOT-SOURCE MODULES
 # ==================================
-# Do not use Join-Path or any complex path handling
+# Use dot-sourcing instead of Import-Module
+# Use absolute paths to eliminate path duplication issues
 
-# Import modules with plain, simple, fixed relative paths
-Import-Module -Name ".\Modules\Configuration-Enhanced.psm1" -Force
-Import-Module -Name ".\Modules\Constraints.psm1" -Force
-Import-Module -Name ".\Modules\TableInfo.psm1" -Force
-Import-Module -Name ".\Modules\DataMovement.psm1" -Force
-Import-Module -Name ".\Modules\Logging.psm1" -Force
+# Get script location using the absolute path
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $scriptPath
 
+# Echo the directory for debugging - never use Join-Path for these paths
+Write-Host "Script directory: $scriptDir"
+
+# Dot-source modules using absolute paths without Join-Path
+. "$scriptDir\Modules\Configuration-Enhanced.psm1"
+. "$scriptDir\Modules\Constraints.psm1"
+. "$scriptDir\Modules\TableInfo.psm1"
+. "$scriptDir\Modules\DataMovement.psm1"
+. "$scriptDir\Modules\Logging.psm1"
+
+# Main function
 function Start-SmartBcp {
     [CmdletBinding()]
     param (
@@ -41,6 +50,9 @@ function Start-SmartBcp {
     Write-SmartBcpLog -Message "Starting Smart BCP operation" -Level "INFO" -LogFile $LogFile
     
     try {
+        # Log current paths for debugging
+        Write-SmartBcpLog -Message "Script directory: $scriptDir" -Level "INFO" -LogFile $LogFile
+        
         # Load configuration
         Write-SmartBcpLog -Message "Loading configuration from $ConfigFile" -Level "INFO" -LogFile $LogFile
         $config = Import-SmartBcpConfig -ConfigFile $ConfigFile
@@ -181,17 +193,28 @@ function Start-SmartBcp {
                 $partitionLabel = if ($partitionInfo.IsPartitioned) { "partition $partition" } else { "single partition" }
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
-                # Pass the direct module paths to jobs
+                # For the background job, we will place the module code directly in the job
+                # instead of trying to import the module, which might cause path issues
+                
+                # Get the content of the module files we need for the job
+                $dataMovementCode = Get-Content -Path "$scriptDir\Modules\DataMovement.psm1" -Raw
+                $loggingCode = Get-Content -Path "$scriptDir\Modules\Logging.psm1" -Raw
+                
                 $jobParams = @{
                     ScriptBlock = {
                         param($srcServer, $srcDB, $table, $isPartitioned, $partitionFunc, $partitionCol, $partitionNum, 
                               $dstServer, $dstDB, $tmpFolder, $batchSz, $logFile, 
-                              $srcAuth, $srcUser, $srcPass, $dstAuth, $dstUser, $dstPass)
+                              $srcAuth, $srcUser, $srcPass, $dstAuth, $dstUser, $dstPass,
+                              $dataMovementCode, $loggingCode)
                         
                         try {
-                            # Import modules directly in the job
-                            Import-Module -Name ".\Modules\DataMovement.psm1" -Force
-                            Import-Module -Name ".\Modules\Logging.psm1" -Force
+                            # Instead of importing modules, evaluate the code directly
+                            # This eliminates all path issues since we're not trying to locate the module files
+                            $scriptBlock = [ScriptBlock]::Create($loggingCode)
+                            . $scriptBlock
+                            
+                            $scriptBlock = [ScriptBlock]::Create($dataMovementCode)
+                            . $scriptBlock
                             
                             $partitionLabel = if ($isPartitioned) { "partition $partitionNum" } else { "single partition" }
                             Write-SmartBcpLog -Message "Starting export of $table ($partitionLabel)" -Level "INFO" -LogFile $logFile
@@ -223,7 +246,8 @@ function Start-SmartBcp {
                         $sourceServer, $sourceDB, $table, $partitionInfo.IsPartitioned, 
                         $partitionInfo.PartitionFunction, $partitionInfo.PartitionColumn, $partition, 
                         $destServer, $destDB, $tempFolder, $batchSize, $LogFile,
-                        $sourceAuth, $sourceUser, $sourcePass, $destAuth, $destUser, $destPass
+                        $sourceAuth, $sourceUser, $sourcePass, $destAuth, $destUser, $destPass,
+                        $dataMovementCode, $loggingCode  # Pass the actual code instead of paths
                     )
                 }
                 
