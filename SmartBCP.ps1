@@ -16,24 +16,30 @@ param (
     [switch]$DetailedLogging
 )
 
-# ULTRA SIMPLE PATH APPROACH: DOT-SOURCE MODULES
-# ==================================
-# Use dot-sourcing instead of Import-Module
-# Use absolute paths to eliminate path duplication issues
+# ULTRA SIMPLE PATH APPROACH WITH CODE EVALUATION
+# =================================================
+# Instead of dot-sourcing (which may open the file in an editor), we load the module code using Get-Content and Invoke-Expression.
+# This ensures the module's functions are defined in the current session.
 
 # Get script location using the absolute path
 $scriptPath = $MyInvocation.MyCommand.Path
 $scriptDir = Split-Path -Parent $scriptPath
 
-# Echo the directory for debugging - never use Join-Path for these paths
+# Echo the directory for debugging
 Write-Host "Script directory: $scriptDir"
 
-# Dot-source modules using absolute paths without Join-Path
-. "$scriptDir\Modules\Configuration-Enhanced.psm1"
-. "$scriptDir\Modules\Constraints.psm1"
-. "$scriptDir\Modules\TableInfo.psm1"
-. "$scriptDir\Modules\DataMovement.psm1"
-. "$scriptDir\Modules\Logging.psm1"
+# List of module filenames to load
+$moduleFiles = @("Configuration-Enhanced.psm1", "Constraints.psm1", "TableInfo.psm1", "DataMovement.psm1", "Logging.psm1")
+foreach ($file in $moduleFiles) {
+    # Use [IO.Path]::Combine to build the module file path robustly
+    $modPath = [System.IO.Path]::Combine($scriptDir, "Modules", $file)
+    if (-not (Test-Path -Path $modPath)) {
+        Write-Error "Module file not found: $modPath"
+        exit 1
+    }
+    $modContent = Get-Content -Path $modPath -Raw
+    Invoke-Expression $modContent
+}
 
 # Main function
 function Start-SmartBcp {
@@ -102,8 +108,6 @@ function Start-SmartBcp {
             $orderedTables = Get-TableProcessingOrder -Tables $tables -Dependencies $dependencies
         }
         catch {
-            # This catch block should no longer be needed since we handle circular dependencies in the function,
-            # but we'll keep it as a fallback just in case
             Write-SmartBcpLog -Message "Error determining table order: $_" -Level "ERROR" -LogFile $LogFile
             throw $_
         }
@@ -112,18 +116,15 @@ function Start-SmartBcp {
         Write-SmartBcpLog -Message "Dropping foreign key constraints" -Level "INFO" -LogFile $LogFile
         foreach ($constraint in $constraints) {
             try {
-                # Set SQL authentication parameters if needed
                 $sqlParams = @{
                     ServerInstance = $destServer
                     Database = $destDB
                     Query = $constraint.DropScript
                 }
-                
                 if ($destAuth -eq "sql") {
                     $sqlParams.Add("Username", $destUser)
                     $sqlParams.Add("Password", $destPass)
                 }
-                
                 Invoke-Sqlcmd @sqlParams
                 Write-SmartBcpLog -Message "Dropped constraint: $($constraint.FKName)" -Level "INFO" -LogFile $LogFile
             }
@@ -141,42 +142,34 @@ function Start-SmartBcp {
         foreach ($table in $orderedTables) {
             Write-SmartBcpLog -Message "Processing table: $table" -Level "INFO" -LogFile $LogFile
             
-            # Get partition information
             $partitionInfo = Get-TablePartitions -Server $sourceServer -Database $sourceDB -TableName $table -Authentication $sourceAuth -Username $sourceUser -Password $sourcePass
             
-            # Truncate target table if specified
             if ($truncateTarget) {
                 try {
-                    # Set SQL authentication parameters if needed
                     $sqlParams = @{
                         ServerInstance = $destServer
                         Database = $destDB
                         Query = "TRUNCATE TABLE [$table]"
                     }
-                    
                     if ($destAuth -eq "sql") {
                         $sqlParams.Add("Username", $destUser)
                         $sqlParams.Add("Password", $destPass)
                     }
-                    
                     Invoke-Sqlcmd @sqlParams
                     Write-SmartBcpLog -Message "Truncated table: $table" -Level "INFO" -LogFile $LogFile
                 }
                 catch {
                     Write-SmartBcpLog -Message "Could not truncate $table. Attempting DELETE instead." -Level "WARNING" -LogFile $LogFile
                     try {
-                        # Set SQL authentication parameters if needed
                         $sqlParams = @{
                             ServerInstance = $destServer
                             Database = $destDB
                             Query = "DELETE FROM [$table]"
                         }
-                        
                         if ($destAuth -eq "sql") {
                             $sqlParams.Add("Username", $destUser)
                             $sqlParams.Add("Password", $destPass)
                         }
-                        
                         Invoke-Sqlcmd @sqlParams
                         Write-SmartBcpLog -Message "Deleted all rows from table: $table" -Level "INFO" -LogFile $LogFile
                     }
@@ -188,15 +181,11 @@ function Start-SmartBcp {
                 }
             }
             
-            # Process each partition
             foreach ($partition in $partitionInfo.Partitions) {
                 $partitionLabel = if ($partitionInfo.IsPartitioned) { "partition $partition" } else { "single partition" }
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
-                # For the background job, we will place the module code directly in the job
-                # instead of trying to import the module, which might cause path issues
-                
-                # Get the content of the module files we need for the job
+                # Read the code of the necessary module files
                 $dataMovementCode = Get-Content -Path "$scriptDir\Modules\DataMovement.psm1" -Raw
                 $loggingCode = Get-Content -Path "$scriptDir\Modules\Logging.psm1" -Raw
                 
@@ -206,20 +195,14 @@ function Start-SmartBcp {
                               $dstServer, $dstDB, $tmpFolder, $batchSz, $logFile, 
                               $srcAuth, $srcUser, $srcPass, $dstAuth, $dstUser, $dstPass,
                               $dataMovementCode, $loggingCode)
-                        
                         try {
-                            # Instead of importing modules, evaluate the code directly
-                            # This eliminates all path issues since we're not trying to locate the module files
-                            $scriptBlock = [ScriptBlock]::Create($loggingCode)
-                            . $scriptBlock
-                            
-                            $scriptBlock = [ScriptBlock]::Create($dataMovementCode)
-                            . $scriptBlock
+                            # Evaluate the module code directly
+                            Invoke-Expression $loggingCode
+                            Invoke-Expression $dataMovementCode
                             
                             $partitionLabel = if ($isPartitioned) { "partition $partitionNum" } else { "single partition" }
                             Write-SmartBcpLog -Message "Starting export of $table ($partitionLabel)" -Level "INFO" -LogFile $logFile
                             
-                            # Export
                             $outputFile = Export-TablePartition -SourceServer $srcServer -SourceDatabase $srcDB `
                                           -TableName $table -IsPartitioned $isPartitioned -PartitionFunction $partitionFunc `
                                           -PartitionColumn $partitionCol -PartitionNumber $partitionNum -OutputPath $tmpFolder `
@@ -227,7 +210,6 @@ function Start-SmartBcp {
                             
                             Write-SmartBcpLog -Message "Exported $table ($partitionLabel) to $outputFile" -Level "SUCCESS" -LogFile $logFile
                             
-                            # Import
                             Write-SmartBcpLog -Message "Starting import of $table ($partitionLabel)" -Level "INFO" -LogFile $logFile
                             Import-TablePartition -DestServer $dstServer -DestDatabase $dstDB `
                                              -TableName $table -InputFile $outputFile -BatchSize $batchSz `
@@ -247,15 +229,13 @@ function Start-SmartBcp {
                         $partitionInfo.PartitionFunction, $partitionInfo.PartitionColumn, $partition, 
                         $destServer, $destDB, $tempFolder, $batchSize, $LogFile,
                         $sourceAuth, $sourceUser, $sourcePass, $destAuth, $destUser, $destPass,
-                        $dataMovementCode, $loggingCode  # Pass the actual code instead of paths
+                        $dataMovementCode, $loggingCode
                     )
                 }
-                
                 $jobQueue += $jobParams
             }
         }
         
-        # Process job queue with throttling
         $totalJobs = $jobQueue.Count
         $completedJobs = 0
         $failedJobs = 0
@@ -263,22 +243,18 @@ function Start-SmartBcp {
         Write-SmartBcpLog -Message "Starting parallel processing with $maxThreads threads for $totalJobs total jobs" -Level "INFO" -LogFile $LogFile
         
         while ($jobQueue.Count -gt 0 -or $runningJobs.Count -gt 0) {
-            # Start new jobs if slots available
             while ($jobQueue.Count -gt 0 -and $runningJobs.Count -lt $maxThreads) {
                 $jobParams = $jobQueue[0]
                 $jobQueue = $jobQueue[1..($jobQueue.Count-1)]
-                
                 $job = Start-Job @jobParams
                 $runningJobs += $job
                 Write-SmartBcpLog -Message "Started job $($job.Id) - $($runningJobs.Count)/$maxThreads threads active" -Level "INFO" -LogFile $LogFile
             }
             
-            # Check for completed jobs
             $stillRunning = @()
             foreach ($job in $runningJobs) {
                 if ($job.State -eq "Completed") {
                     $result = Receive-Job -Job $job -ErrorAction SilentlyContinue
-                    
                     if ($result -eq $true) {
                         $completedJobs++
                         Write-SmartBcpLog -Message "Job $($job.Id) completed successfully ($completedJobs/$totalJobs)" -Level "SUCCESS" -LogFile $LogFile
@@ -286,9 +262,8 @@ function Start-SmartBcp {
                         $failedJobs++
                         Write-SmartBcpLog -Message "Job $($job.Id) failed ($failedJobs/$totalJobs)" -Level "ERROR" -LogFile $LogFile
                     }
-                    
                     Remove-Job -Job $job
-                } 
+                }
                 elseif ($job.State -eq "Failed") {
                     $failedJobs++
                     $errorDetails = Receive-Job -Job $job -ErrorAction SilentlyContinue
@@ -300,32 +275,27 @@ function Start-SmartBcp {
                 }
             }
             $runningJobs = $stillRunning
-            
-            # Pause before checking again
             if ($runningJobs.Count -ge $maxThreads -or ($jobQueue.Count -eq 0 -and $runningJobs.Count -gt 0)) {
                 Start-Sleep -Seconds 2
             }
         }
         
-        # Recreate all foreign key constraints
         Write-SmartBcpLog -Message "Recreating foreign key constraints" -Level "INFO" -LogFile $LogFile
         foreach ($constraint in $constraints) {
             try {
-                # Set SQL authentication parameters if needed
                 $sqlParams = @{
                     ServerInstance = $destServer
                     Database = $destDB
                     Query = $constraint.CreateScript
                 }
-                
                 if ($destAuth -eq "sql") {
                     $sqlParams.Add("Username", $destUser)
                     $sqlParams.Add("Password", $destPass)
                 }
-                
                 Invoke-Sqlcmd @sqlParams
                 Write-SmartBcpLog -Message "Recreated constraint: $($constraint.FKName)" -Level "INFO" -LogFile $LogFile
-            } catch {
+            }
+            catch {
                 $errorMessage = "Failed to recreate constraint {0}: {1}" -f $constraint.FKName, $_.Exception.Message
                 Write-SmartBcpLog -Message $errorMessage -Level "ERROR" -LogFile $LogFile
             }
@@ -333,10 +303,8 @@ function Start-SmartBcp {
         
         $endTime = Get-Date
         $duration = $endTime - $startTime
-        
         Write-SmartBcpLog -Message "Smart BCP operation completed in $($duration.TotalMinutes.ToString('0.00')) minutes" -Level "SUCCESS" -LogFile $LogFile
         Write-SmartBcpLog -Message "Successfully processed: $completedJobs jobs" -Level "SUCCESS" -LogFile $LogFile
-        
         if ($failedJobs -gt 0) {
             Write-SmartBcpLog -Message "Failed jobs: $failedJobs" -Level "ERROR" -LogFile $LogFile
         }
@@ -347,7 +315,6 @@ function Start-SmartBcp {
         throw $_
     }
     finally {
-        # Clean up any leftover temp files
         if ($tempFolder -and (Test-Path -Path $tempFolder)) {
             $tempFiles = Get-ChildItem -Path $tempFolder -Filter "*.dat" -ErrorAction SilentlyContinue
             if ($tempFiles -and $tempFiles.Count -gt 0) {
@@ -358,13 +325,11 @@ function Start-SmartBcp {
     }
 }
 
-# Execute main function
 if ($DetailedLogging) {
     $VerbosePreference = "Continue"
 }
 
 try {
-    # Start the main function with the parameters passed to the script
     Start-SmartBcp -ConfigFile $ConfigFile -LogFile $LogFile
     exit 0
 }
