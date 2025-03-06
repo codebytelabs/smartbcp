@@ -16,48 +16,16 @@ param (
     [switch]$DetailedLogging
 )
 
-# Get the directory where this script is located (using $PSScriptRoot)
-if ($PSScriptRoot) {
-    $scriptDir = $PSScriptRoot
-} else {
-    $scriptDir = (Get-Location).Path
-}
+# THE SIMPLEST POSSIBLE PATH HANDLING 
+# ==================================
+# Do not use Join-Path or any complex path handling
 
-# Log current paths for debugging
-Write-Host "Script directory: $scriptDir"
-
-# Define full module paths - this ensures consistency
-$modulePaths = @{
-    ConfigModule = "$scriptDir\Modules\Configuration-Enhanced.psm1"
-    ConstraintsModule = "$scriptDir\Modules\Constraints.psm1" 
-    TableInfoModule = "$scriptDir\Modules\TableInfo.psm1"
-    DataMovementModule = "$scriptDir\Modules\DataMovement.psm1"
-    LoggingModule = "$scriptDir\Modules\Logging.psm1"
-}
-
-# Validate that all modules exist
-foreach ($key in $modulePaths.Keys) {
-    $path = $modulePaths[$key]
-    if (-not (Test-Path -Path $path)) {
-        Write-Error "Module not found: $path"
-        exit 1
-    }
-}
-
-# Import modules
-try {
-    Write-Host "Importing modules..."
-    Import-Module -Name $modulePaths.ConfigModule -Force
-    Import-Module -Name $modulePaths.ConstraintsModule -Force
-    Import-Module -Name $modulePaths.TableInfoModule -Force
-    Import-Module -Name $modulePaths.DataMovementModule -Force
-    Import-Module -Name $modulePaths.LoggingModule -Force
-    Write-Host "All modules imported successfully."
-} 
-catch {
-    Write-Error "Failed to import modules: $_"
-    exit 1
-}
+# Import modules with plain, simple, fixed relative paths
+Import-Module -Name ".\Modules\Configuration-Enhanced.psm1" -Force
+Import-Module -Name ".\Modules\Constraints.psm1" -Force
+Import-Module -Name ".\Modules\TableInfo.psm1" -Force
+Import-Module -Name ".\Modules\DataMovement.psm1" -Force
+Import-Module -Name ".\Modules\Logging.psm1" -Force
 
 function Start-SmartBcp {
     [CmdletBinding()]
@@ -68,9 +36,6 @@ function Start-SmartBcp {
         [Parameter(Mandatory = $false)]
         [string]$LogFile
     )
-    
-    # Use global module paths to ensure consistency
-    $localModulePaths = $modulePaths
     
     $startTime = Get-Date
     Write-SmartBcpLog -Message "Starting Smart BCP operation" -Level "INFO" -LogFile $LogFile
@@ -216,37 +181,17 @@ function Start-SmartBcp {
                 $partitionLabel = if ($partitionInfo.IsPartitioned) { "partition $partition" } else { "single partition" }
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
-                # These are the module paths we'll pass to the background job
-                $dataMovementPath = $localModulePaths.DataMovementModule
-                $loggingPath = $localModulePaths.LoggingModule
-                
-                # Log paths for debugging
-                Write-SmartBcpLog -Message "DataMovement module path: $dataMovementPath" -Level "INFO" -LogFile $LogFile
-                Write-SmartBcpLog -Message "Logging module path: $loggingPath" -Level "INFO" -LogFile $LogFile
-                
-                # Create job script block with complete module import
+                # Pass the direct module paths to jobs
                 $jobParams = @{
                     ScriptBlock = {
                         param($srcServer, $srcDB, $table, $isPartitioned, $partitionFunc, $partitionCol, $partitionNum, 
                               $dstServer, $dstDB, $tmpFolder, $batchSz, $logFile, 
-                              $srcAuth, $srcUser, $srcPass, $dstAuth, $dstUser, $dstPass,
-                              $dataMovementPath, $loggingPath)
+                              $srcAuth, $srcUser, $srcPass, $dstAuth, $dstUser, $dstPass)
                         
                         try {
-                            # Import needed modules using the full paths passed from the parent script
-                            Write-Host "Loading DataMovement from: $dataMovementPath"
-                            Write-Host "Loading Logging from: $loggingPath"
-                            
-                            # Verify paths exist before importing
-                            if (-not (Test-Path -Path $dataMovementPath)) {
-                                throw "ERROR: DataMovement module not found at: $dataMovementPath"
-                            }
-                            if (-not (Test-Path -Path $loggingPath)) {
-                                throw "ERROR: Logging module not found at: $loggingPath"
-                            }
-                            
-                            Import-Module -Name $dataMovementPath -Force
-                            Import-Module -Name $loggingPath -Force
+                            # Import modules directly in the job
+                            Import-Module -Name ".\Modules\DataMovement.psm1" -Force
+                            Import-Module -Name ".\Modules\Logging.psm1" -Force
                             
                             $partitionLabel = if ($isPartitioned) { "partition $partitionNum" } else { "single partition" }
                             Write-SmartBcpLog -Message "Starting export of $table ($partitionLabel)" -Level "INFO" -LogFile $logFile
@@ -270,12 +215,7 @@ function Start-SmartBcp {
                         }
                         catch {
                             $errorMessage = "Error processing {0} ({1}): {2}" -f $table, $partitionLabel, $_.Exception.Message
-                            # Try to use Write-SmartBcpLog if available, otherwise fall back to Write-Error
-                            if (Get-Command -Name Write-SmartBcpLog -ErrorAction SilentlyContinue) {
-                                Write-SmartBcpLog -Message $errorMessage -Level "ERROR" -LogFile $logFile
-                            } else {
-                                Write-Error $errorMessage
-                            }
+                            Write-Error $errorMessage
                             return $false
                         }
                     }
@@ -283,8 +223,7 @@ function Start-SmartBcp {
                         $sourceServer, $sourceDB, $table, $partitionInfo.IsPartitioned, 
                         $partitionInfo.PartitionFunction, $partitionInfo.PartitionColumn, $partition, 
                         $destServer, $destDB, $tempFolder, $batchSize, $LogFile,
-                        $sourceAuth, $sourceUser, $sourcePass, $destAuth, $destUser, $destPass,
-                        $dataMovementPath, $loggingPath
+                        $sourceAuth, $sourceUser, $sourcePass, $destAuth, $destUser, $destPass
                     )
                 }
                 
@@ -401,6 +340,7 @@ if ($DetailedLogging) {
 }
 
 try {
+    # Start the main function with the parameters passed to the script
     Start-SmartBcp -ConfigFile $ConfigFile -LogFile $LogFile
     exit 0
 }
