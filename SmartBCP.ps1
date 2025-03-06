@@ -16,15 +16,17 @@ param (
     [switch]$DetailedLogging
 )
 
-# Import modules using relative paths
-$modulesPath = ".\Modules"
-Write-Host "Using modules from: $modulesPath"
+# Get script directory and import modules
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $scriptPath
+Write-Host "Script directory: $scriptDir"
 
-Import-Module -Name "$modulesPath\Configuration-Enhanced.psm1" -Force
-Import-Module -Name "$modulesPath\Constraints.psm1" -Force
-Import-Module -Name "$modulesPath\TableInfo.psm1" -Force
-Import-Module -Name "$modulesPath\DataMovement.psm1" -Force
-Import-Module -Name "$modulesPath\Logging.psm1" -Force
+# Import each module with its full path
+Import-Module -Name "$scriptDir/Modules/Configuration-Enhanced.psm1" -Force
+Import-Module -Name "$scriptDir/Modules/Constraints.psm1" -Force
+Import-Module -Name "$scriptDir/Modules/TableInfo.psm1" -Force
+Import-Module -Name "$scriptDir/Modules/DataMovement.psm1" -Force
+Import-Module -Name "$scriptDir/Modules/Logging.psm1" -Force
 
 function Start-SmartBcp {
     [CmdletBinding()]
@@ -180,9 +182,9 @@ function Start-SmartBcp {
                 $partitionLabel = if ($partitionInfo.IsPartitioned) { "partition $partition" } else { "single partition" }
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
-                # Prepare module paths for the background job
-                $dataMovementModulePath = "$modulesPath\DataMovement.psm1"
-                $loggingModulePath = "$modulesPath\Logging.psm1"
+                # Prepare full module paths for the background job using script directory
+                $dataMovementModulePath = "$scriptDir/Modules/DataMovement.psm1"
+                $loggingModulePath = "$scriptDir/Modules/Logging.psm1"
                 
                 Write-SmartBcpLog -Message "DataMovement module path: $dataMovementModulePath" -Level "INFO" -LogFile $LogFile
                 Write-SmartBcpLog -Message "Logging module path: $loggingModulePath" -Level "INFO" -LogFile $LogFile
