@@ -16,22 +16,18 @@ param (
     [switch]$DetailedLogging
 )
 
-# Import modules - using absolute paths to ensure consistency
-$scriptDir = $PSScriptRoot
-if (-not $scriptDir) {
-    # If running from current directory, get the absolute path
-    $scriptDir = (Get-Location).Path
-}
-$modulePath = Join-Path -Path $scriptDir -ChildPath "Modules"
+# Get the root directory (where SmartBCP.ps1 is located)
+$rootDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 
-# Log the module path for debugging
-Write-Host "Module path: $modulePath"
+# Log the root directory for debugging
+Write-Host "Root directory: $rootDir"
 
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Configuration-Enhanced.psm1") -Force
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Constraints.psm1") -Force
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "TableInfo.psm1") -Force
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "DataMovement.psm1") -Force
-Import-Module -Name (Join-Path -Path $modulePath -ChildPath "Logging.psm1") -Force
+# Import modules directly using the root directory
+Import-Module -Name "$rootDir\Modules\Configuration-Enhanced.psm1" -Force
+Import-Module -Name "$rootDir\Modules\Constraints.psm1" -Force
+Import-Module -Name "$rootDir\Modules\TableInfo.psm1" -Force
+Import-Module -Name "$rootDir\Modules\DataMovement.psm1" -Force
+Import-Module -Name "$rootDir\Modules\Logging.psm1" -Force
 
 function Start-SmartBcp {
     [CmdletBinding()]
@@ -40,8 +36,14 @@ function Start-SmartBcp {
         [string]$ConfigFile,
         
         [Parameter(Mandatory = $false)]
-        [string]$LogFile
+        [string]$LogFile,
+        
+        [Parameter(Mandatory = $false)]
+        [string]$ScriptRoot = $rootDir
     )
+    
+    # Make sure we have the root directory for module paths
+    $rootDir = $ScriptRoot
     
     $startTime = Get-Date
     Write-SmartBcpLog -Message "Starting Smart BCP operation" -Level "INFO" -LogFile $LogFile
@@ -188,8 +190,8 @@ function Start-SmartBcp {
                 Write-SmartBcpLog -Message "Preparing to process $table ($partitionLabel)" -Level "INFO" -LogFile $LogFile
                 
                 # Prepare absolute module paths for the background job
-                $dataMovementModulePath = Join-Path -Path $modulePath -ChildPath "DataMovement.psm1"
-                $loggingModulePath = Join-Path -Path $modulePath -ChildPath "Logging.psm1"
+                $dataMovementModulePath = "$rootDir\Modules\DataMovement.psm1"
+                $loggingModulePath = "$rootDir\Modules\Logging.psm1"
                 
                 Write-SmartBcpLog -Message "DataMovement module path: $dataMovementModulePath" -Level "INFO" -LogFile $LogFile
                 Write-SmartBcpLog -Message "Logging module path: $loggingModulePath" -Level "INFO" -LogFile $LogFile
@@ -356,7 +358,7 @@ if ($DetailedLogging) {
 }
 
 try {
-    Start-SmartBcp -ConfigFile $ConfigFile -LogFile $LogFile
+    Start-SmartBcp -ConfigFile $ConfigFile -LogFile $LogFile -ScriptRoot $rootDir
     exit 0
 }
 catch {
