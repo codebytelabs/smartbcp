@@ -53,8 +53,22 @@ function Import-SmartBcpConfig {
         if ($config.options.tempFolder) {
             # If path is relative, make it absolute based on script location
             if (-not [System.IO.Path]::IsPathRooted($config.options.tempFolder)) {
-                $scriptRoot = Split-Path -Parent $ConfigFile
-                $absolutePath = Join-Path -Path $scriptRoot -ChildPath $config.options.tempFolder
+                # Get the config file directory
+                $configDir = Split-Path -Parent $ConfigFile
+                
+                # Log the paths for debugging
+                Write-Verbose "Config file directory: $configDir"
+                Write-Verbose "Relative temp folder: $($config.options.tempFolder)"
+                
+                # Make path absolute without using Join-Path to avoid path duplication
+                if ($config.options.tempFolder.StartsWith('.\') -or $config.options.tempFolder.StartsWith('./')) {
+                    $relativePath = $config.options.tempFolder.Substring(2)
+                    $absolutePath = "$configDir\$relativePath"
+                } else {
+                    $absolutePath = "$configDir\$($config.options.tempFolder)"
+                }
+                
+                Write-Verbose "Absolute temp folder path: $absolutePath"
                 $config.options.tempFolder = $absolutePath
             }
         }

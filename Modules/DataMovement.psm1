@@ -40,7 +40,12 @@ function Export-TablePartition {
     $schema = $schemaTable[0]
     $table = $schemaTable[1]
     
-    $outputFile = Join-Path -Path $OutputPath -ChildPath "$($schema)_$($table)_p$PartitionNumber.dat"
+    # Create output file path without using Join-Path to avoid path duplication
+    if ($OutputPath.EndsWith('\') -or $OutputPath.EndsWith('/')) {
+        $outputFile = "$OutputPath$($schema)_$($table)_p$PartitionNumber.dat"
+    } else {
+        $outputFile = "$OutputPath\$($schema)_$($table)_p$PartitionNumber.dat"
+    }
     
     # Create query based on partitioning
     if ($IsPartitioned) {
