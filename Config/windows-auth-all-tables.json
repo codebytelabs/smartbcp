@@ -1,0 +1,21 @@
+{
+    "source": {
+        "server": "SourceServer",
+        "database": "SourceDatabase",
+        "authentication": "windows"
+    },
+    "destination": {
+        "server": "DestinationServer",
+        "database": "DestinationDatabase",
+        "authentication": "windows"
+    },
+    "tables": [
+        "ALL"
+    ],
+    "options": {
+        "maxThreads": 8,
+        "batchSize": 10000,
+        "truncateTarget": true,
+        "tempFolder": "./Temp"
+    }
+}

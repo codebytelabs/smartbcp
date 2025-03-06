@@ -1,0 +1,25 @@
+{
+    "source": {
+        "server": "SourceServer",
+        "database": "SourceDatabase",
+        "authentication": "sql",
+        "username": "sourceUser",
+        "password": "sourcePassword"
+    },
+    "destination": {
+        "server": "DestinationServer",
+        "database": "DestinationDatabase",
+        "authentication": "sql",
+        "username": "destUser",
+        "password": "destPassword"
+    },
+    "tables": [
+        "ALL"
+    ],
+    "options": {
+        "maxThreads": 8,
+        "batchSize": 10000,
+        "truncateTarget": true,
+        "tempFolder": "./Temp"
+    }
+}
