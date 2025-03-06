@@ -41,7 +41,8 @@ function Import-SmartBcpConfig {
         }
         
         if (-not $config.options.tempFolder) {
-            $tempPath = Join-Path -Path $env:TEMP -ChildPath "SmartBCP"
+            # Avoid Join-Path to prevent path duplication
+            $tempPath = "$env:TEMP\SmartBCP"
             $config.options | Add-Member -MemberType NoteProperty -Name "tempFolder" -Value $tempPath
         }
         
