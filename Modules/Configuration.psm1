@@ -73,19 +73,23 @@ function Convert-ConfigToParameters {
         $params.Add("TruncateTargetTables", $Config.truncateTargetTables)
     }
     
-    if (Get-Member -InputObject $Config -Name "includeSchemas" -MemberType Properties -and $Config.includeSchemas.Count -gt 0) {
+    if (Get-Member -InputObject $Config -Name "batchSize" -MemberType Properties) {
+        $params.Add("BatchSize", $Config.batchSize)
+    }
+    
+    if ((Get-Member -InputObject $Config -Name "includeSchemas" -MemberType Properties) -and ($Config.includeSchemas.Count -gt 0)) {
         $params.Add("IncludeSchemas", $Config.includeSchemas)
     }
     
-    if (Get-Member -InputObject $Config -Name "excludeSchemas" -MemberType Properties -and $Config.excludeSchemas.Count -gt 0) {
+    if ((Get-Member -InputObject $Config -Name "excludeSchemas" -MemberType Properties) -and ($Config.excludeSchemas.Count -gt 0)) {
         $params.Add("ExcludeSchemas", $Config.excludeSchemas)
     }
     
-    if (Get-Member -InputObject $Config -Name "includeTables" -MemberType Properties -and $Config.includeTables.Count -gt 0) {
+    if ((Get-Member -InputObject $Config -Name "includeTables" -MemberType Properties) -and ($Config.includeTables.Count -gt 0)) {
         $params.Add("IncludeTables", $Config.includeTables)
     }
     
-    if (Get-Member -InputObject $Config -Name "excludeTables" -MemberType Properties -and $Config.excludeTables.Count -gt 0) {
+    if ((Get-Member -InputObject $Config -Name "excludeTables" -MemberType Properties) -and ($Config.excludeTables.Count -gt 0)) {
         $params.Add("ExcludeTables", $Config.excludeTables)
     }
     

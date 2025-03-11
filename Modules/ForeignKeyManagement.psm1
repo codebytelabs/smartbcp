@@ -135,13 +135,18 @@ function Drop-ForeignKeyConstraints {
         if ($DropScriptPath -and (Test-Path $DropScriptPath)) {
             $dropScript = Get-Content $DropScriptPath -Raw
             
-            if ($Credential) {
-                Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $dropScript -Credential $Credential -TrustServerCertificate
+            # Check if the script is not empty
+            if (-not [string]::IsNullOrWhiteSpace($dropScript)) {
+                if ($Credential) {
+                    Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $dropScript -Credential $Credential -TrustServerCertificate
+                } else {
+                    Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $dropScript -TrustServerCertificate
+                }
+                
+                Write-Log "Dropped foreign key constraints using script: $DropScriptPath" -Level INFO
             } else {
-                Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $dropScript -TrustServerCertificate
+                Write-Log "No foreign key constraints to drop (empty script)" -Level INFO
             }
-            
-            Write-Log "Dropped foreign key constraints using script: $DropScriptPath" -Level INFO
         } else {
             # Otherwise, generate and execute drop statements
             $query = @"
@@ -188,13 +193,18 @@ function Restore-ForeignKeyConstraints {
         
         $createScript = Get-Content $CreateScriptPath -Raw
         
-        if ($Credential) {
-            Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $createScript -Credential $Credential -TrustServerCertificate
+        # Check if the script is not empty
+        if (-not [string]::IsNullOrWhiteSpace($createScript)) {
+            if ($Credential) {
+                Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $createScript -Credential $Credential -TrustServerCertificate
+            } else {
+                Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $createScript -TrustServerCertificate
+            }
+            
+            Write-Log "Restored foreign key constraints using script: $CreateScriptPath" -Level INFO
         } else {
-            Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $createScript -TrustServerCertificate
+            Write-Log "No foreign key constraints to restore (empty script)" -Level INFO
         }
-        
-        Write-Log "Restored foreign key constraints using script: $CreateScriptPath" -Level INFO
         return $true
     } catch {
         Write-Log "Error restoring foreign key constraints: $($_.Exception.Message)" -Level ERROR

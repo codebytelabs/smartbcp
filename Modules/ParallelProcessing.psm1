@@ -317,7 +317,9 @@ function Start-ParallelTableMigration {
                     }
                     
                     $fileInfo = Get-Item $tempFilePath
-                    Write-Log "Temp file created: $tempFilePath, Size: $($fileInfo.Length) bytes" -Level INFO
+                    $fileSizeBytes = $fileInfo.Length
+                    $fileSizeMB = [Math]::Round($fileSizeBytes / 1MB, 2)
+                    Write-Log "Temp file created: $tempFilePath, Size: $fileSizeBytes bytes ($fileSizeMB MB)" -Level INFO
                     
                     $importResult = Import-TableData -Server $MigrationParams.TargetServer `
                                                     -Database $MigrationParams.TargetDB `
@@ -325,11 +327,34 @@ function Start-ParallelTableMigration {
                                                     -Table $tableName `
                                                     -InputFile $tempFilePath `
                                                     -Format $MigrationParams.BCPFormat `
+                                                    -BatchSize $MigrationParams.BatchSize `
                                                     -Credential $MigrationParams.TargetCredential
                     
                     if (-not $importResult) {
                         Write-Log "Failed to import data to ${fullTableName}" -Level ERROR
-                        return $false
+                        if (Test-Path $tempFilePath) {
+                            Remove-Item $tempFilePath -Force -ErrorAction SilentlyContinue
+                            Write-Log "Removed temporary file after error: $tempFilePath" -Level VERBOSE
+                        }
+                        return @{
+                            Success = $false
+                            TableName = $fullTableName
+                            Error = "Failed to import data"
+                            SourceRowCount = $sourceRowCount
+                            TargetRowCount = 0
+                            DataSizeBytes = $fileSizeBytes
+                            DurationSeconds = 0
+                        }
+                    }
+                    
+                    # Return file size before deleting the temp file
+                    $result = @{
+                        Success = $true
+                        TableName = $fullTableName
+                        SourceRowCount = $sourceRowCount
+                        TargetRowCount = $sourceRowCount
+                        DataSizeBytes = $fileSizeBytes
+                        DurationSeconds = 0
                     }
                     
                     if (Test-Path $tempFilePath) {
@@ -337,7 +362,7 @@ function Start-ParallelTableMigration {
                         Write-Log "Removed temporary file: $tempFilePath" -Level VERBOSE
                     }
                     
-                    return $true
+                    return $result
                 } catch {
                     Write-Log ("Error migrating table ${fullTableName}`: {0}" -f $_.Exception.Message) -Level ERROR
                     
@@ -402,57 +427,91 @@ function Start-ParallelTableMigration {
                 }
             }
 
-            # Migrate table data with enhanced statistics
-            $migrationStartTime = Get-Date
-            
-            # Get source row count
+            # Get row count for source table
             $sourceRowCount = Get-TableRowCount -Server $MigrationParams.SourceServer `
                                                -Database $MigrationParams.SourceDB `
                                                -Schema $schema `
                                                -Table $tableName `
                                                -Credential $MigrationParams.SourceCredential
             
-            Write-Log "Source row count for $fullTableName: $sourceRowCount" -Level INFO
+            Write-Log "Source row count for ${fullTableName}: $sourceRowCount" -Level INFO
+            
+            # Record start time for statistics
+            $startTime = Get-Date
             
             # Migrate table data
-            $migrationResult = Migrate-TableData -Table $Table -MigrationParams $MigrationParams
+            $result = Migrate-TableData -Table $Table -MigrationParams $MigrationParams
             
-            $migrationEndTime = Get-Date
-            $duration = $migrationEndTime - $migrationStartTime
+            # Record end time for statistics
+            $endTime = Get-Date
+            $duration = $endTime - $startTime
             $durationSeconds = [Math]::Round($duration.TotalSeconds, 2)
-            
-            # If the migration result is a boolean (old version), convert it to the new format
-            if ($migrationResult -is [bool]) {
-                $migrationResult = @{
-                    Success = $migrationResult
+
+            if ($result) {
+                # Get target row count for validation
+                $targetRowCount = Get-TableRowCount -Server $MigrationParams.TargetServer `
+                                                   -Database $MigrationParams.TargetDB `
+                                                   -Schema $schema `
+                                                   -Table $tableName `
+                                                   -Credential $MigrationParams.TargetCredential
+                
+                Write-Log "Target row count for ${fullTableName}: $targetRowCount" -Level INFO
+                
+                # Validate row counts
+                if ($sourceRowCount -ne $targetRowCount) {
+                    Write-Log "Row count mismatch for ${fullTableName}: Source=$sourceRowCount, Target=$targetRowCount" -Level WARNING
+                } else {
+                    Write-Log "Row count validation successful for ${fullTableName}: $sourceRowCount rows" -Level INFO
+                }
+                
+                # Get file size if available
+                $tempFilePath = Join-Path $MigrationParams.TempFilePath "$schema`_$tableName`_*.dat"
+                $tempFiles = Get-ChildItem -Path $tempFilePath -ErrorAction SilentlyContinue
+                $dataSizeBytes = 0
+                
+                if ($tempFiles -and $tempFiles.Count -gt 0) {
+                    $dataSizeBytes = $tempFiles[0].Length
+                }
+                
+                # Calculate statistics
+                $rowsPerSecond = 0
+                $mbPerSecond = 0
+                
+                if ($durationSeconds -gt 0 -and $sourceRowCount -gt 0) {
+                    $rowsPerSecond = [Math]::Round($sourceRowCount / $durationSeconds, 2)
+                    $mbPerSecond = [Math]::Round(($dataSizeBytes / 1MB) / $durationSeconds, 2)
+                    
+                    Write-Log "Migration statistics for ${fullTableName}:" -Level INFO
+                    Write-Log "  Duration: $durationSeconds seconds" -Level INFO
+                    Write-Log "  Rows/second: $rowsPerSecond" -Level INFO
+                    Write-Log "  MB/second: $mbPerSecond" -Level INFO
+                }
+                
+                Write-Log "Successfully migrated table $fullTableName" -Level INFO
+                return @{ 
+                    Success = $true
                     TableName = $fullTableName
                     SourceRowCount = $sourceRowCount
-                    TargetRowCount = -1
+                    TargetRowCount = $targetRowCount
+                    DataSizeBytes = $dataSizeBytes
+                    DurationSeconds = $durationSeconds
+                    RowsPerSecond = $rowsPerSecond
+                    MBPerSecond = $mbPerSecond
+                }
+            }
+            else {
+                Write-Log "Failed to migrate table $fullTableName" -Level ERROR
+                return @{ 
+                    Success = $false
+                    TableName = $fullTableName
+                    SourceRowCount = $sourceRowCount
+                    TargetRowCount = 0
                     DataSizeBytes = 0
                     DurationSeconds = $durationSeconds
+                    RowsPerSecond = 0
+                    MBPerSecond = 0
                 }
             }
-            
-            # Add duration if not already present
-            if (-not $migrationResult.ContainsKey("DurationSeconds")) {
-                $migrationResult.DurationSeconds = $durationSeconds
-            }
-            
-            if ($migrationResult.Success) {
-                Write-Log "Successfully migrated table $fullTableName" -Level INFO
-                Write-Log "  Duration: $durationSeconds seconds" -Level INFO
-                if ($migrationResult.SourceRowCount -gt 0) {
-                    Write-Log "  Rows: $($migrationResult.SourceRowCount)" -Level INFO
-                }
-                if ($migrationResult.DataSizeBytes -gt 0) {
-                    $dataSizeMB = [Math]::Round($migrationResult.DataSizeBytes / 1MB, 2)
-                    Write-Log "  Data size: $dataSizeMB MB" -Level INFO
-                }
-            } else {
-                Write-Log "Failed to migrate table $fullTableName" -Level ERROR
-            }
-            
-            return $migrationResult
         }
         catch {
             $errorMessage = $_.Exception.Message

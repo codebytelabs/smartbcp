@@ -14,27 +14,27 @@ function Initialize-Logging {
         [string]$Timestamp = (Get-Date -Format "yyyyMMdd_HHmmss")
     )
     
-    # Create log directory if it doesn't exist
-    if (-not (Test-Path $LogDir)) {
-        New-Item -Path $LogDir -ItemType Directory -Force | Out-Null
-    }
-
-    # Set up global log file path
-    $global:LogFilePath = Join-Path $LogDir "SmartBCP_${Timestamp}.log"
-    New-Item -Path $global:LogFilePath -ItemType File -Force | Out-Null
-    Write-Verbose "Initialized log file: $global:LogFilePath"
-
-    # Initialize log file with timestamp
     try {
+        # Create log directory if it doesn't exist
+        if (-not (Test-Path $LogDir)) {
+            New-Item -Path $LogDir -ItemType Directory -Force | Out-Null
+        }
+
+        # Set up global log file path
+        $global:LogFilePath = Join-Path $LogDir "SmartBCP_${Timestamp}.log"
+        
         # Ensure the file is created and accessible
         $null = New-Item -Path $global:LogFilePath -ItemType File -Force
+        
         # Write a header line to verify file is writable
         $headerLine = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [INFO] SmartBCP Log File Initialized"
         [System.IO.File]::WriteAllText($global:LogFilePath, "$headerLine`r`n")
-        Write-Verbose "Initialized log file: $global:LogFilePath"
+        
+        Write-Host "Log file initialized: $global:LogFilePath"
         return $global:LogFilePath
     } catch {
         Write-Error "Failed to create log file: $($_.Exception.Message)"
+        $global:LogFilePath = $null
         return $null
     }
 }
@@ -62,6 +62,11 @@ function Write-Log {
     }
     
     # Write to log file with retry logic
+    if ($null -eq $global:LogFilePath) {
+        Write-Warning "Log file path is not initialized. Cannot write to log file."
+        return
+    }
+    
     $maxRetries = 5
     $retryCount = 0
     $retryDelay = 100 # milliseconds

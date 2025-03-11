@@ -128,6 +128,7 @@ This document provides a detailed, step-by-step explanation of the entire migrat
   - TargetDB: Target database name
   - TempFilePath: Path for temporary BCP files
   - BCPFormat: Format for BCP operations (native, char, widechar)
+  - BatchSize: Number of rows to process in a single batch during import
   - SourceCredential: Credentials for source database
   - TargetCredential: Credentials for target database
 
@@ -169,9 +170,9 @@ This document provides a detailed, step-by-step explanation of the entire migrat
 - Test connection to source database
 - Execute BCP export command and capture output
 - Verify export success and temporary file creation
-- Build BCP import command with appropriate parameters
+- Build BCP import command with appropriate parameters (including batch size)
 - Test connection to target database
-- Execute BCP import command and capture output
+- Execute BCP import command with batch size parameter (-b flag) and capture output
 - Parse row count from BCP output
 - Record success or failure
 - Calculate duration

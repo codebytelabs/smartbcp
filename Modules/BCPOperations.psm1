@@ -305,7 +305,7 @@ function Migrate-TableData {
         } catch {
             Write-Log "Failed to create temp directory: $($_.Exception.Message)" -Level ERROR
             Write-Log "Exception details: $($_.Exception | Format-List -Force | Out-String)" -Level ERROR
-            return @{ Success = $false }
+            return $false
         }
     } else {
         Write-Log "Temp directory exists" -Level INFO
@@ -323,30 +323,6 @@ function Migrate-TableData {
     }
     
     try {
-        # Create result object to track statistics
-        $result = @{
-            Success = $false
-            TableName = $fullTableName
-            SourceRowCount = 0
-            TargetRowCount = 0
-            DataSizeBytes = 0
-            StartTime = Get-Date
-            EndTime = $null
-            DurationSeconds = 0
-            RowsPerSecond = 0
-            MBPerSecond = 0
-        }
-        
-        # Get source row count
-        $sourceRowCount = Get-TableRowCount -Server $MigrationParams.SourceServer `
-                                           -Database $MigrationParams.SourceDB `
-                                           -Schema $schema `
-                                           -Table $tableName `
-                                           -Credential $MigrationParams.SourceCredential
-        
-        $result.SourceRowCount = $sourceRowCount
-        Write-Log "Source row count for ${fullTableName}: $sourceRowCount" -Level INFO
-        
         Write-Log "Starting export for ${fullTableName} to $tempFilePath" -Level INFO
         $exportResult = Export-TableData -Server $MigrationParams.SourceServer `
                                         -Database $MigrationParams.SourceDB `
@@ -358,21 +334,17 @@ function Migrate-TableData {
         
         if (-not $exportResult) {
             Write-Log "Failed to export data from ${fullTableName}" -Level ERROR
-            return $result
+            return $false
         }
         
         # Verify temp file was created
         if (-not (Test-Path $tempFilePath)) {
             Write-Log "Temp file was not created: $tempFilePath" -Level ERROR
-            return $result
+            return $false
         }
         
         $fileInfo = Get-Item $tempFilePath
-        $fileSizeBytes = $fileInfo.Length
-        $result.DataSizeBytes = $fileSizeBytes
-        
-        $fileSizeMB = [Math]::Round($fileSizeBytes / 1MB, 2)
-        Write-Log "Temp file created: $tempFilePath, Size: $fileSizeBytes bytes ($fileSizeMB MB)" -Level INFO
+        Write-Log "Temp file created: $tempFilePath, Size: $($fileInfo.Length) bytes" -Level INFO
         
         $importResult = Import-TableData -Server $MigrationParams.TargetServer `
                                         -Database $MigrationParams.TargetDB `
@@ -384,44 +356,7 @@ function Migrate-TableData {
         
         if (-not $importResult) {
             Write-Log "Failed to import data to ${fullTableName}" -Level ERROR
-            
-            if (Test-Path $tempFilePath) {
-                Remove-Item $tempFilePath -Force -ErrorAction SilentlyContinue
-                Write-Log "Removed temporary file after error: $tempFilePath" -Level VERBOSE
-            }
-            
-            return $result
-        }
-        
-        # Get target row count for validation
-        $targetRowCount = Get-TableRowCount -Server $MigrationParams.TargetServer `
-                                           -Database $MigrationParams.TargetDB `
-                                           -Schema $schema `
-                                           -Table $tableName `
-                                           -Credential $MigrationParams.TargetCredential
-        
-        $result.TargetRowCount = $targetRowCount
-        Write-Log "Target row count for ${fullTableName}: $targetRowCount" -Level INFO
-        
-        # Validate row counts
-        if ($sourceRowCount -ne $targetRowCount) {
-            Write-Log "Row count mismatch for ${fullTableName}: Source=$sourceRowCount, Target=$targetRowCount" -Level WARNING
-        } else {
-            Write-Log "Row count validation successful for ${fullTableName}: $sourceRowCount rows" -Level INFO
-        }
-        
-        # Calculate statistics
-        $result.EndTime = Get-Date
-        $result.DurationSeconds = [Math]::Round(($result.EndTime - $result.StartTime).TotalSeconds, 2)
-        
-        if ($result.DurationSeconds -gt 0 -and $sourceRowCount -gt 0) {
-            $result.RowsPerSecond = [Math]::Round($sourceRowCount / $result.DurationSeconds, 2)
-            $result.MBPerSecond = [Math]::Round(($fileSizeBytes / 1MB) / $result.DurationSeconds, 2)
-            
-            Write-Log "Migration statistics for ${fullTableName}:" -Level INFO
-            Write-Log "  Duration: $($result.DurationSeconds) seconds" -Level INFO
-            Write-Log "  Rows/second: $($result.RowsPerSecond)" -Level INFO
-            Write-Log "  MB/second: $($result.MBPerSecond)" -Level INFO
+            return $false
         }
         
         if (Test-Path $tempFilePath) {
@@ -429,8 +364,7 @@ function Migrate-TableData {
             Write-Log "Removed temporary file: $tempFilePath" -Level VERBOSE
         }
         
-        $result.Success = $true
-        return $result
+        return $true
     } catch {
         Write-Log ("Error migrating table ${fullTableName}`: {0}" -f $_.Exception.Message) -Level ERROR
         
@@ -439,11 +373,7 @@ function Migrate-TableData {
             Write-Log "Removed temporary file after error: $tempFilePath" -Level VERBOSE
         }
         
-        return @{ 
-            Success = $false
-            TableName = $fullTableName
-            Error = $_.Exception.Message
-        }
+        return $false
     }
 }
 

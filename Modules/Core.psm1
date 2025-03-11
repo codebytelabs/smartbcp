@@ -44,6 +44,9 @@ function Start-SmartBCP {
         [string]$TempPath = ".\Temp",
         
         [Parameter(Mandatory=$false)]
+        [int]$BatchSize = 10000,
+        
+        [Parameter(Mandatory=$false)]
         [System.Management.Automation.PSCredential]$SourceCredential,
         
         [Parameter(Mandatory=$false)]
@@ -89,6 +92,13 @@ function Start-SmartBCP {
 
         $sourceConnection = Test-DatabaseConnection -Server $SourceServer -Database $SourceDB @sourceCredParam
         
+        # Validate source connection
+        if (-not $sourceConnection.Success) {
+            Write-Log "Failed to connect to source database: $($sourceConnection.Error)" -Level ERROR
+            throw "Source database connection failed: $($sourceConnection.Error)"
+        }
+        Write-Log "Successfully connected to source database $SourceDB on $SourceServer" -Level INFO
+        
         # Test target database connection
         $targetCredParam = @{}
         if ($TargetCredential) {
@@ -96,6 +106,13 @@ function Start-SmartBCP {
         }
 
         $targetConnection = Test-DatabaseConnection -Server $TargetServer -Database $TargetDB @targetCredParam
+        
+        # Validate target connection
+        if (-not $targetConnection.Success) {
+            Write-Log "Failed to connect to target database: $($targetConnection.Error)" -Level ERROR
+            throw "Target database connection failed: $($targetConnection.Error)"
+        }
+        Write-Log "Successfully connected to target database $TargetDB on $TargetServer" -Level INFO
         
         # Test BCP command availability
         Test-BCPAvailability
@@ -114,6 +131,46 @@ function Start-SmartBCP {
             $tables = $tables | Where-Object { $ExcludeTables -notcontains $_.TABLE_NAME }
         }
         
+        # Handle foreign key constraints if requested
+        $fkBackupInfo = $null
+        if ($ManageForeignKeys) {
+            Write-Log "Managing foreign key constraints..." -Level INFO
+            $fkBackupPath = Join-Path $tempDir "ForeignKeys"
+            
+            try {
+                $fkBackupInfo = Backup-ForeignKeyConstraints -Server $TargetServer -Database $TargetDB -BackupPath $fkBackupPath @targetCredParam
+                Write-Log "Backed up $($fkBackupInfo.Count) foreign key constraints" -Level INFO
+                
+                Drop-ForeignKeyConstraints -Server $TargetServer -Database $TargetDB -DropScriptPath $fkBackupInfo.DropPath @targetCredParam
+                Write-Log "Dropped foreign key constraints" -Level INFO
+            } catch {
+                Write-Log "Error managing foreign key constraints: $($_.Exception.Message)" -Level ERROR
+                throw $_
+            }
+        } else {
+            Write-Log "Foreign key management is disabled" -Level INFO
+        }
+        
+        # Truncate target tables if requested
+        if ($TruncateTargetTables) {
+            Write-Log "Truncating target tables..." -Level INFO
+            
+            foreach ($table in $tables) {
+                $schema = $table.TABLE_SCHEMA
+                $tableName = $table.TABLE_NAME
+                
+                $truncateResult = Truncate-Table -Server $TargetServer -Database $TargetDB -Schema $schema -Table $tableName -ResetIdentity $true @targetCredParam
+                
+                if ($truncateResult) {
+                    Write-Log "Truncated table [$schema].[$tableName]" -Level INFO
+                } else {
+                    Write-Log "Failed to truncate table [$schema].[$tableName]" -Level WARNING
+                }
+            }
+        } else {
+            Write-Log "Table truncation is disabled" -Level INFO
+        }
+        
         # Initialize migration parameters
         $migrationParams = @{
             SourceServer = $SourceServer
@@ -122,6 +179,7 @@ function Start-SmartBCP {
             TargetDB = $TargetDB
             TempFilePath = $tempDir
             BCPFormat = $BCPFormat
+            BatchSize = $BatchSize
             SourceCredential = $SourceCredential
             TargetCredential = $TargetCredential
         }
@@ -130,6 +188,23 @@ function Start-SmartBCP {
         $runspacePool = [runspacefactory]::CreateRunspacePool(1, $ParallelTasks)
         $runspacePool.Open()
         $migrationResults = Start-ParallelTableMigration -Tables $tables -ParallelTasks $ParallelTasks -MigrationParams $migrationParams
+        
+        # Restore foreign key constraints if they were backed up
+        if ($ManageForeignKeys -and $fkBackupInfo -ne $null) {
+            Write-Log "Restoring foreign key constraints..." -Level INFO
+            
+            try {
+                $restoreResult = Restore-ForeignKeyConstraints -Server $TargetServer -Database $TargetDB -CreateScriptPath $fkBackupInfo.CreatePath @targetCredParam
+                
+                if ($restoreResult) {
+                    Write-Log "Successfully restored foreign key constraints" -Level INFO
+                } else {
+                    Write-Log "Failed to restore foreign key constraints" -Level WARNING
+                }
+            } catch {
+                Write-Log "Error restoring foreign key constraints: $($_.Exception.Message)" -Level ERROR
+            }
+        }
         
         # Log the migration summary
         Write-Log "Migration completed." -Level INFO

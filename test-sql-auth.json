@@ -1,17 +1,17 @@
 {
-  "sourceServer": "serverName",
-  "sourceDB": "databaseName",
-  "targetServer": "serverName",
-  "targetDB": "databaseName",
+  "sourceServer": "vmapacjpnwin19s",
+  "sourceDB": "AdventureWorks",
+  "targetServer": "vmapacjpnwin19s",
+  "targetDB": "AdventureWorks_Copy",
   "authentication": {
     "type": "sql",
     "source": {
-      "username": "sourceUsername",
-      "password": "sourcePassword"
+      "username": "localadmin",
+      "password": "Harsha@2792025"
     },
     "target": {
-      "username": "targetUsername",
-      "password": "targetPassword"
+      "username": "localadmin",
+      "password": "Harsha@2792025"
     }
   },
   "parallelTasks": 4,
@@ -19,7 +19,7 @@
   "tempPath": "./Temp",
   "batchSize": 10000,
   "manageForeignKeys": true,
-  "truncateTargetTables": false,
+  "truncateTargetTables": true,
   "includeSchemas": [],
   "excludeSchemas": [],
   "includeTables": [],

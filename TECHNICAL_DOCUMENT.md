@@ -177,7 +177,7 @@ Detailed logging was implemented to:
 
 - **Parallel Processing**: The number of parallel tasks can be adjusted based on system resources
 - **BCP Format**: Native format is fastest but less portable
-- **Batch Size**: Can be adjusted for optimal performance
+- **Batch Size**: Can be adjusted for optimal performance through the batchSize configuration parameter
 - **Foreign Key Constraints**: Disabling constraints improves import performance
 
 ## Security Considerations

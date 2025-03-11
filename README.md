@@ -42,6 +42,7 @@ SmartBCP is a PowerShell utility for efficient SQL Server database migration usi
 | ParallelTasks | Number of tables to migrate in parallel | 4 |
 | BCPFormat | BCP format to use: native, char, or widechar | native |
 | TempPath | Path for temporary files | .\Temp |
+| BatchSize | Number of rows to process in a single batch during import | 10000 |
 | SourceCredential | SQL credentials for source database connection | (Windows auth) |
 | TargetCredential | SQL credentials for target database connection | (Windows auth) |
 
@@ -94,6 +95,14 @@ $sourceCred = Get-Credential -Message "Enter source database credentials"
 $targetCred = Get-Credential -Message "Enter target database credentials"
 .\SmartBCP.ps1 -SourceServer "Server1" -SourceDB "DB1" -TargetServer "Server2" -TargetDB "DB2" -SourceCredential $sourceCred -TargetCredential $targetCred
 ```
+
+### Migration Using Configuration File
+
+```powershell
+.\SmartBCP.ps1 -ConfigFile .\test-sql-auth.json
+```
+
+This approach uses a JSON configuration file that contains all the necessary parameters. Example configuration files are provided in the repository (config-sql-auth.json, config-windows-auth.json).
 
 ## Logs
 
