@@ -14,13 +14,13 @@
       "password": "Harsha@2792025"
     }
   },
-  "parallelTasks": 4,
+  "parallelTasks": 16,
   "bcpFormat": "native",
   "tempPath": "./Temp",
-  "batchSize": 10000,
+  "batchSize": 20000,
   "manageForeignKeys": true,
   "truncateTargetTables": true,
-  "includeSchemas": [],
+  "includeSchemas": [], 
   "excludeSchemas": [],
   "includeTables": [],
   "excludeTables": []

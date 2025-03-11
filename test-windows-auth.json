@@ -12,7 +12,7 @@
   "batchSize": 10000,
   "manageForeignKeys": true,
   "truncateTargetTables": false,
-  "includeSchemas": ["HumanResources"],
+  "includeSchemas": [], 
   "excludeSchemas": [],
   "includeTables": [],
   "excludeTables": []
