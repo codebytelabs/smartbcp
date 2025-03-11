@@ -1,0 +1,26 @@
+{
+  "sourceServer": "serverName",
+  "sourceDB": "databaseName",
+  "targetServer": "serverName",
+  "targetDB": "databaseName",
+  "authentication": {
+    "type": "sql",
+    "source": {
+      "username": "sourceUsername",
+      "password": "sourcePassword"
+    },
+    "target": {
+      "username": "targetUsername",
+      "password": "targetPassword"
+    }
+  },
+  "parallelTasks": 4,
+  "bcpFormat": "native",
+  "tempPath": "./Temp",
+  "manageForeignKeys": true,
+  "truncateTargetTables": false,
+  "includeSchemas": [],
+  "excludeSchemas": [],
+  "includeTables": [],
+  "excludeTables": []
+}

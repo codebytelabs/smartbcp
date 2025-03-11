@@ -1,0 +1,18 @@
+{
+  "sourceServer": "serverName",
+  "sourceDB": "databaseName",
+  "targetServer": "serverName",
+  "targetDB": "databaseName",
+  "authentication": {
+    "type": "windows"
+  },
+  "parallelTasks": 4,
+  "bcpFormat": "native",
+  "tempPath": "./Temp",
+  "manageForeignKeys": true,
+  "truncateTargetTables": false,
+  "includeSchemas": [],
+  "excludeSchemas": [],
+  "includeTables": [],
+  "excludeTables": []
+}

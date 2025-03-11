@@ -131,6 +131,52 @@ function Start-SmartBCP {
         $runspacePool.Open()
         $migrationResults = Start-ParallelTableMigration -Tables $tables -ParallelTasks $ParallelTasks -MigrationParams $migrationParams
         
+        # Log the migration summary
+        Write-Log "Migration completed." -Level INFO
+        Write-Log $migrationResults.Summary -Level INFO
+        
+        # Validate row counts if requested
+        if ($migrationResults.TotalSourceRows -gt 0 -and $migrationResults.TotalTargetRows -gt 0) {
+            if ($migrationResults.TotalSourceRows -eq $migrationResults.TotalTargetRows) {
+                Write-Log "Row count validation successful: Source=$($migrationResults.TotalSourceRows), Target=$($migrationResults.TotalTargetRows)" -Level INFO
+            } else {
+                Write-Log "Row count validation failed: Source=$($migrationResults.TotalSourceRows), Target=$($migrationResults.TotalTargetRows)" -Level WARNING
+                Write-Log "Row count difference: $($migrationResults.TotalSourceRows - $migrationResults.TotalTargetRows)" -Level WARNING
+            }
+        }
+        
+        # Generate detailed table report
+        if ($migrationResults.TableResults.Count -gt 0) {
+            Write-Log "Detailed Table Migration Report:" -Level INFO
+            Write-Log "----------------------------------------" -Level INFO
+            
+            foreach ($tableResult in $migrationResults.TableResults | Where-Object { $_.Success -eq $true } | Sort-Object -Property DurationSeconds -Descending) {
+                $durationFormatted = [TimeSpan]::FromSeconds($tableResult.DurationSeconds).ToString("hh\:mm\:ss")
+                $dataSizeMB = [Math]::Round($tableResult.DataSizeBytes / 1MB, 2)
+                
+                Write-Log "Table: $($tableResult.TableName)" -Level INFO
+                Write-Log "  Status: Success" -Level INFO
+                Write-Log "  Rows: $($tableResult.SourceRowCount)" -Level INFO
+                Write-Log "  Data Size: $dataSizeMB MB" -Level INFO
+                Write-Log "  Duration: $durationFormatted" -Level INFO
+                if ($tableResult.RowsPerSecond -gt 0) {
+                    Write-Log "  Transfer Rate: $($tableResult.RowsPerSecond) rows/sec, $($tableResult.MBPerSecond) MB/sec" -Level INFO
+                }
+                Write-Log "----------------------------------------" -Level INFO
+            }
+            
+            if ($migrationResults.FailedTables -gt 0) {
+                Write-Log "Failed Tables:" -Level ERROR
+                Write-Log "----------------------------------------" -Level ERROR
+                
+                foreach ($tableResult in $migrationResults.TableResults | Where-Object { $_.Success -eq $false }) {
+                    Write-Log "Table: $($tableResult.TableName)" -Level ERROR
+                    Write-Log "  Error: $($tableResult.Error)" -Level ERROR
+                    Write-Log "----------------------------------------" -Level ERROR
+                }
+            }
+        }
+        
         return $migrationResults
     }
     catch {

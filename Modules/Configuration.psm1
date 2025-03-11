@@ -15,11 +15,141 @@ function Load-Configuration {
     try {
         $config = Get-Content $ConfigFilePath -Raw | ConvertFrom-Json
         Write-Log "Loaded configuration from $ConfigFilePath" -Level INFO
+        
+        # Validate required configuration properties
+        $requiredProps = @("sourceServer", "sourceDB", "targetServer", "targetDB")
+        $missingProps = @()
+        
+        foreach ($prop in $requiredProps) {
+            if (-not (Get-Member -InputObject $config -Name $prop -MemberType Properties)) {
+                $missingProps += $prop
+            }
+        }
+        
+        if ($missingProps.Count -gt 0) {
+            Write-Log "Missing required configuration properties: $($missingProps -join ', ')" -Level ERROR
+            throw "Missing required configuration properties: $($missingProps -join ', ')"
+        }
+        
         return $config
     } catch {
         Write-Log "Error loading configuration: $($_.Exception.Message)" -Level ERROR
         throw "Error loading configuration: $($_.Exception.Message)"
     }
+}
+
+# Convert configuration to parameters for Start-SmartBCP
+function Convert-ConfigToParameters {
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$Config
+    )
+    
+    $params = @{
+        SourceServer = $Config.sourceServer
+        SourceDB = $Config.sourceDB
+        TargetServer = $Config.targetServer
+        TargetDB = $Config.targetDB
+    }
+    
+    # Handle optional parameters
+    if (Get-Member -InputObject $Config -Name "parallelTasks" -MemberType Properties) {
+        $params.Add("ParallelTasks", $Config.parallelTasks)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "bcpFormat" -MemberType Properties) {
+        $params.Add("BCPFormat", $Config.bcpFormat)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "tempPath" -MemberType Properties) {
+        $params.Add("TempPath", $Config.tempPath)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "manageForeignKeys" -MemberType Properties) {
+        $params.Add("ManageForeignKeys", $Config.manageForeignKeys)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "truncateTargetTables" -MemberType Properties) {
+        $params.Add("TruncateTargetTables", $Config.truncateTargetTables)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "includeSchemas" -MemberType Properties -and $Config.includeSchemas.Count -gt 0) {
+        $params.Add("IncludeSchemas", $Config.includeSchemas)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "excludeSchemas" -MemberType Properties -and $Config.excludeSchemas.Count -gt 0) {
+        $params.Add("ExcludeSchemas", $Config.excludeSchemas)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "includeTables" -MemberType Properties -and $Config.includeTables.Count -gt 0) {
+        $params.Add("IncludeTables", $Config.includeTables)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "excludeTables" -MemberType Properties -and $Config.excludeTables.Count -gt 0) {
+        $params.Add("ExcludeTables", $Config.excludeTables)
+    }
+    
+    # Handle authentication
+    if (Get-Member -InputObject $Config -Name "authentication" -MemberType Properties) {
+        $auth = $Config.authentication
+        
+        if (Get-Member -InputObject $auth -Name "type" -MemberType Properties) {
+            if ($auth.type -eq "sql") {
+                # Check for separate source and target credentials
+                if (Get-Member -InputObject $auth -Name "source" -MemberType Properties) {
+                    $sourceAuth = $auth.source
+                    if ((Get-Member -InputObject $sourceAuth -Name "username" -MemberType Properties) -and 
+                        (Get-Member -InputObject $sourceAuth -Name "password" -MemberType Properties)) {
+                        
+                        $securePassword = ConvertTo-SecureString $sourceAuth.password -AsPlainText -Force
+                        $sourceCredential = New-Object System.Management.Automation.PSCredential($sourceAuth.username, $securePassword)
+                        
+                        $params.Add("SourceCredential", $sourceCredential)
+                        Write-Log "Using SQL authentication for source from config file" -Level INFO
+                    } else {
+                        Write-Log "Source SQL authentication specified but username or password missing" -Level WARNING
+                    }
+                }
+                
+                if (Get-Member -InputObject $auth -Name "target" -MemberType Properties) {
+                    $targetAuth = $auth.target
+                    if ((Get-Member -InputObject $targetAuth -Name "username" -MemberType Properties) -and 
+                        (Get-Member -InputObject $targetAuth -Name "password" -MemberType Properties)) {
+                        
+                        $securePassword = ConvertTo-SecureString $targetAuth.password -AsPlainText -Force
+                        $targetCredential = New-Object System.Management.Automation.PSCredential($targetAuth.username, $securePassword)
+                        
+                        $params.Add("TargetCredential", $targetCredential)
+                        Write-Log "Using SQL authentication for target from config file" -Level INFO
+                    } else {
+                        Write-Log "Target SQL authentication specified but username or password missing" -Level WARNING
+                    }
+                }
+                
+                # For backward compatibility - check for common credentials
+                if ((-not (Get-Member -InputObject $auth -Name "source" -MemberType Properties)) -and
+                    (-not (Get-Member -InputObject $auth -Name "target" -MemberType Properties)) -and
+                    (Get-Member -InputObject $auth -Name "username" -MemberType Properties) -and 
+                    (Get-Member -InputObject $auth -Name "password" -MemberType Properties)) {
+                    
+                    $securePassword = ConvertTo-SecureString $auth.password -AsPlainText -Force
+                    $credential = New-Object System.Management.Automation.PSCredential($auth.username, $securePassword)
+                    
+                    $params.Add("SourceCredential", $credential)
+                    $params.Add("TargetCredential", $credential)
+                    
+                    Write-Log "Using common SQL authentication for source and target from config file" -Level INFO
+                }
+            } elseif ($auth.type -eq "windows") {
+                Write-Log "Using Windows authentication from config file" -Level INFO
+                # Windows authentication doesn't require credentials
+            } else {
+                Write-Log "Unknown authentication type: $($auth.type)" -Level WARNING
+            }
+        }
+    }
+    
+    return $params
 }
 
 # Validate Required Parameters
@@ -129,4 +259,4 @@ function Get-SqlCredentialFromEnv {
 }
 
 # Export module members
-Export-ModuleMember -Function Load-Configuration, Validate-Parameters, Load-EnvFile, Get-SqlCredentialFromEnv
+Export-ModuleMember -Function Load-Configuration, Convert-ConfigToParameters, Validate-Parameters, Load-EnvFile, Get-SqlCredentialFromEnv

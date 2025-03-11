@@ -16,9 +16,15 @@ function Start-ParallelTableMigration {
     Write-Log "Starting parallel table migration with $ParallelTasks tasks..." -Level INFO
     Write-Log "Total tables to migrate: $($Tables.Count)" -Level INFO
 
-    # Initialize counters
+    # Initialize counters and statistics
     $successfulTables = 0
     $failedTables = 0
+    $totalSourceRows = 0
+    $totalTargetRows = 0
+    $totalDataSizeBytes = 0
+    $totalDurationSeconds = 0
+    $tableResults = @()
+    $startTime = Get-Date
 
     # Create a runspace pool and open it
     $runspacePool = [runspacefactory]::CreateRunspacePool(1, $ParallelTasks)
@@ -358,22 +364,108 @@ function Start-ParallelTableMigration {
         try {
             Write-Log "Starting migration of table $fullTableName..." -Level INFO
 
-            # Migrate table data
-            $result = Migrate-TableData -Table $Table -MigrationParams $MigrationParams
+            # Get row count for source table
+            function Get-TableRowCount {
+                param (
+                    [string]$Server,
+                    [string]$Database,
+                    [string]$Schema,
+                    [string]$Table,
+                    [System.Management.Automation.PSCredential]$Credential
+                )
 
-            if ($result) {
+                $query = @"
+                SELECT COUNT(*) AS RowCount FROM [$Schema].[$Table] WITH (NOLOCK);
+"@
+
+                try {
+                    $bcpCommand = "sqlcmd -S `"$Server`" -d `"$Database`" -Q `"$query`" -h-1"
+                    
+                    if ($Credential) {
+                        $bcpCommand += " -U `"$($Credential.UserName)`" -P `"$($Credential.GetNetworkCredential().Password)`""
+                    } else {
+                        $bcpCommand += " -E"
+                    }
+                    
+                    $output = Invoke-Expression $bcpCommand -ErrorAction Stop
+                    
+                    # Parse the output to get the row count
+                    $rowCount = 0
+                    if ($output -match '^\s*(\d+)\s*$') {
+                        $rowCount = [int]$matches[1]
+                    }
+                    
+                    return $rowCount
+                } catch {
+                    Write-Log ("Error getting row count for table {0}: {1}" -f "[$Schema].[$Table]", $_.Exception.Message) -Level WARNING
+                    return -1
+                }
+            }
+
+            # Migrate table data with enhanced statistics
+            $migrationStartTime = Get-Date
+            
+            # Get source row count
+            $sourceRowCount = Get-TableRowCount -Server $MigrationParams.SourceServer `
+                                               -Database $MigrationParams.SourceDB `
+                                               -Schema $schema `
+                                               -Table $tableName `
+                                               -Credential $MigrationParams.SourceCredential
+            
+            Write-Log "Source row count for $fullTableName: $sourceRowCount" -Level INFO
+            
+            # Migrate table data
+            $migrationResult = Migrate-TableData -Table $Table -MigrationParams $MigrationParams
+            
+            $migrationEndTime = Get-Date
+            $duration = $migrationEndTime - $migrationStartTime
+            $durationSeconds = [Math]::Round($duration.TotalSeconds, 2)
+            
+            # If the migration result is a boolean (old version), convert it to the new format
+            if ($migrationResult -is [bool]) {
+                $migrationResult = @{
+                    Success = $migrationResult
+                    TableName = $fullTableName
+                    SourceRowCount = $sourceRowCount
+                    TargetRowCount = -1
+                    DataSizeBytes = 0
+                    DurationSeconds = $durationSeconds
+                }
+            }
+            
+            # Add duration if not already present
+            if (-not $migrationResult.ContainsKey("DurationSeconds")) {
+                $migrationResult.DurationSeconds = $durationSeconds
+            }
+            
+            if ($migrationResult.Success) {
                 Write-Log "Successfully migrated table $fullTableName" -Level INFO
-                return @{ Success = $true; TableName = $fullTableName }
-            }
-            else {
+                Write-Log "  Duration: $durationSeconds seconds" -Level INFO
+                if ($migrationResult.SourceRowCount -gt 0) {
+                    Write-Log "  Rows: $($migrationResult.SourceRowCount)" -Level INFO
+                }
+                if ($migrationResult.DataSizeBytes -gt 0) {
+                    $dataSizeMB = [Math]::Round($migrationResult.DataSizeBytes / 1MB, 2)
+                    Write-Log "  Data size: $dataSizeMB MB" -Level INFO
+                }
+            } else {
                 Write-Log "Failed to migrate table $fullTableName" -Level ERROR
-                return @{ Success = $false; TableName = $fullTableName }
             }
+            
+            return $migrationResult
         }
         catch {
             $errorMessage = $_.Exception.Message
             Write-Log "Error migrating table $fullTableName`: $errorMessage" -Level ERROR
-            return @{ Success = $false; TableName = $fullTableName; Error = $errorMessage }
+            return @{ 
+                Success = $false
+                TableName = $fullTableName
+                Error = $errorMessage
+                SourceRowCount = 0
+                TargetRowCount = 0
+                DataSizeBytes = 0
+                DurationSeconds = 0
+            }
         }
     }
 
@@ -407,9 +499,18 @@ function Start-ParallelTableMigration {
             try {
                 $result = $runspace.Powershell.EndInvoke($runspace.Handle)
 
+                # Add result to collection for summary
+                $tableResults += $result
+
                 if ($result.Success) {
                     $successfulTables++
                     Write-Log "Successfully migrated table $($result.TableName)" -Level INFO
+                    
+                    # Accumulate statistics
+                    $totalSourceRows += $result.SourceRowCount
+                    $totalTargetRows += $result.TargetRowCount
+                    $totalDataSizeBytes += $result.DataSizeBytes
+                    $totalDurationSeconds += $result.DurationSeconds
                 }
                 else {
                     $failedTables++
@@ -453,10 +554,53 @@ function Start-ParallelTableMigration {
         Write-Log "Error closing runspace pool: $($_.Exception.Message)" -Level WARNING
     }
 
+    # Calculate overall statistics
+    $endTime = Get-Date
+    $totalDuration = $endTime - $startTime
+    $totalDurationFormatted = $totalDuration.ToString('hh\:mm\:ss')
+    
+    # Calculate average transfer rates
+    $avgRowsPerSecond = 0
+    $avgMBPerSecond = 0
+    
+    if ($totalDurationSeconds -gt 0) {
+        $avgRowsPerSecond = [Math]::Round($totalSourceRows / $totalDuration.TotalSeconds, 2)
+        $avgMBPerSecond = [Math]::Round(($totalDataSizeBytes / 1MB) / $totalDuration.TotalSeconds, 2)
+    }
+    
+    # Generate migration summary
+    $totalDataSizeMB = [Math]::Round($totalDataSizeBytes / 1MB, 2)
+    
+    $summary = @"
+    
+========== MIGRATION SUMMARY ==========
+Total tables: $($Tables.Count)
+Successfully migrated: $successfulTables
+Failed: $failedTables
+Total rows migrated: $totalSourceRows
+Total data size: $totalDataSizeMB MB
+Total duration: $totalDurationFormatted
+Average transfer rate: $avgRowsPerSecond rows/sec, $avgMBPerSecond MB/sec
+======================================
+"@
+    
+    Write-Log $summary -Level INFO
+    
+    # Return detailed results
     return @{
         TotalTables = $Tables.Count
         SuccessfulTables = $successfulTables
         FailedTables = $failedTables
+        TotalSourceRows = $totalSourceRows
+        TotalTargetRows = $totalTargetRows
+        TotalDataSizeBytes = $totalDataSizeBytes
+        TotalDurationSeconds = $totalDuration.TotalSeconds
+        StartTime = $startTime
+        EndTime = $endTime
+        AvgRowsPerSecond = $avgRowsPerSecond
+        AvgMBPerSecond = $avgMBPerSecond
+        TableResults = $tableResults
+        Summary = $summary
     }
 }
 

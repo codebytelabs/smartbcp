@@ -134,5 +134,33 @@ function Test-DatabaseConnection {
     }
 }
 
+# Get row count for a table
+function Get-TableRowCount {
+    param (
+        [string]$Server,
+        [string]$Database,
+        [string]$Schema,
+        [string]$Table,
+        [System.Management.Automation.PSCredential]$Credential
+    )
+
+    $query = @"
+    SELECT COUNT(*) AS RowCount FROM [$Schema].[$Table] WITH (NOLOCK);
+"@
+
+    try {
+        if ($Credential) {
+            $result = Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $query -Credential $Credential -TrustServerCertificate
+        } else {
+            $result = Invoke-Sqlcmd -ServerInstance $Server -Database $Database -Query $query -TrustServerCertificate
+        }
+        
+        return $result.RowCount
+    } catch {
+        Write-Log ("Error getting row count for table {0}: {1}" -f "[$Schema].[$Table]", $_.Exception.Message) -Level WARNING
+        return -1
+    }
+}
+
 # Export module members
-Export-ModuleMember -Function Get-Tables, Truncate-Table, Test-DatabaseConnection
+Export-ModuleMember -Function Get-Tables, Truncate-Table, Test-DatabaseConnection, Get-TableRowCount

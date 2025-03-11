@@ -44,52 +44,55 @@
 #Requires -Version 5.1
 #Requires -Modules SqlServer
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName="Direct")]
 param(
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$true, ParameterSetName="ConfigFile")]
+    [string]$ConfigFile,
+    
+    [Parameter(Mandatory=$true, ParameterSetName="Direct")]
     [string]$SourceServer,
     
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$true, ParameterSetName="Direct")]
     [string]$SourceDB,
     
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$true, ParameterSetName="Direct")]
     [string]$TargetServer,
     
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$true, ParameterSetName="Direct")]
     [string]$TargetDB,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [string[]]$IncludeSchemas,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [string[]]$ExcludeSchemas,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [string[]]$IncludeTables,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [string[]]$ExcludeTables,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [switch]$TruncateTargetTables,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [switch]$ManageForeignKeys,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [int]$ParallelTasks = 4,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [ValidateSet("native", "char", "widechar")]
     [string]$BCPFormat = "native",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [string]$TempPath = ".\Temp",
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [System.Management.Automation.PSCredential]$SourceCredential,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName="Direct")]
     [System.Management.Automation.PSCredential]$TargetCredential
 )
 
@@ -131,5 +134,15 @@ if (-not $PSBoundParameters.ContainsKey("SourceCredential") -or -not $PSBoundPar
     }
 }
 
-# Call the main execution function
-Start-SmartBCP @PSBoundParameters
+# Handle configuration file if provided
+if ($PSCmdlet.ParameterSetName -eq "ConfigFile") {
+    Write-Host "Loading configuration from $ConfigFile"
+    $config = Load-Configuration -ConfigFilePath $ConfigFile
+    $configParams = Convert-ConfigToParameters -Config $config
+    
+    # Call the main execution function with parameters from config file
+    Start-SmartBCP @configParams
+} else {
+    # Call the main execution function with direct parameters
+    Start-SmartBCP @PSBoundParameters
+}
