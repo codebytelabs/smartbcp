@@ -6,10 +6,10 @@
   "authentication": {
     "type": "windows"
   },
-  "parallelTasks": 4,
+  "parallelTasks": 16,
   "bcpFormat": "native",
   "tempPath": "./Temp",
-  "batchSize": 10000,
+  "batchSize": 30000,
   "enableChunking": true,
   "maxChunkSizeMB": 200,
   "chunkingThresholdMB": 500,

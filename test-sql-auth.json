@@ -6,18 +6,18 @@
   "authentication": {
     "type": "sql",
     "source": {
-      "username": "sa",
-      "password": "P@ssw0rd"
+      "username": "localadmin",
+      "password": "Harsha@2792025"
     },
     "target": {
-      "username": "sa",
-      "password": "P@ssw0rd"
+      "username": "localadmin",
+      "password": "Harsha@2792025"
     }
   },
-  "parallelTasks": 4,
+  "parallelTasks": 16,
   "bcpFormat": "native",
   "tempPath": "./Temp",
-  "batchSize": 10000,
+  "batchSize": 30000,
   "enableChunking": true,
   "maxChunkSizeMB": 200,
   "chunkingThresholdMB": 500,
