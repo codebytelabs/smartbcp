@@ -358,7 +358,9 @@ function Migrate-TableData {
                     $maxParallelChunks = [math]::Max(1, $MigrationParams.ParallelTasks * 2)
                     $chunkCount = Get-OptimalChunkCount -TableSizeMB $tableSize.UsedSpaceMB `
                                                       -MaxChunkSizeMB $MigrationParams.MaxChunkSizeMB `
-                                                      -MaxParallelChunks $maxParallelChunks
+                                                      -MaxParallelChunks $maxParallelChunks `
+                                                      -RowCount $tableSize.RowCount `
+                                                      -MaxRowsPerChunk 100000
                     
                     Write-Log "Creating $chunkCount chunks for table $fullTableName" -Level INFO
                     

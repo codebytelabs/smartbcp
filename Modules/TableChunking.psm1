@@ -455,17 +455,27 @@ function Get-OptimalChunkCount {
     param (
         [double]$TableSizeMB,
         [double]$MaxChunkSizeMB,
-        [int]$MaxParallelChunks
+        [int]$MaxParallelChunks,
+        [int]$RowCount,
+        [int]$MaxRowsPerChunk = 100000
     )
     
     # Calculate how many chunks we need based on table size
     $sizeBasedChunks = [math]::Ceiling($TableSizeMB / $MaxChunkSizeMB)
     
+    # Calculate how many chunks we need based on row count
+    $rowBasedChunks = [math]::Ceiling($RowCount / $MaxRowsPerChunk)
+    
+    # Use the larger of the two to ensure both constraints are met
+    $optimalChunks = [math]::Max($sizeBasedChunks, $rowBasedChunks)
+    
     # Limit by max parallel chunks
-    $chunkCount = [math]::Min($sizeBasedChunks, $MaxParallelChunks)
+    $chunkCount = [math]::Min($optimalChunks, $MaxParallelChunks)
     
     # Ensure at least 1 chunk
     $chunkCount = [math]::Max(1, $chunkCount)
+    
+    Write-Log "Chunk calculation: Size-based=$sizeBasedChunks, Row-based=$rowBasedChunks, Optimal=$optimalChunks, Final=$chunkCount" -Level INFO
     
     return $chunkCount
 }

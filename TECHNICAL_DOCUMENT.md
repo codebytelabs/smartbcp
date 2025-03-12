@@ -249,6 +249,12 @@ Chunking behavior can be controlled through configuration parameters:
 - `MaxChunkSizeMB`: Maximum size for each chunk (default: 200MB)
 - `ChunkingThresholdMB`: Minimum table size to activate chunking (default: 500MB)
 
+The chunking algorithm now uses both size-based and row-based constraints to determine the optimal number of chunks:
+
+1. **Size-based chunking**: Divides the table based on the `MaxChunkSizeMB` parameter
+2. **Row-based chunking**: Ensures no chunk exceeds 100,000 rows (configurable)
+3. **Optimal chunking**: Uses the larger of the two calculations to ensure both constraints are met
+
 ### Chunking Workflow
 
 1. Analyze table size
