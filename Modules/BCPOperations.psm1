@@ -451,13 +451,13 @@ function Migrate-TableData {
                 
                 # Verify temp file was created
                 if (-not (Test-Path $tempFilePath)) {
-                    Write-Log "Temp file was not created for chunk $chunkId: $tempFilePath" -Level ERROR
+                    Write-Log "Temp file was not created for chunk $chunkId - $tempFilePath" -Level ERROR
                     $chunkResults += $false
                     continue
                 }
                 
                 $fileInfo = Get-Item $tempFilePath
-                Write-Log "Temp file created for chunk $chunkId: $tempFilePath, Size: $($fileInfo.Length) bytes" -Level INFO
+                Write-Log "Temp file created for chunk $chunkId - $tempFilePath, Size: $($fileInfo.Length) bytes" -Level INFO
                 
                 # Add file to list of chunk files
                 $chunkFiles += $tempFilePath
@@ -483,7 +483,7 @@ function Migrate-TableData {
                 # Clean up temp file
                 if (Test-Path $tempFilePath) {
                     Remove-Item $tempFilePath -Force
-                    Write-Log "Removed temporary file for chunk $chunkId: $tempFilePath" -Level VERBOSE
+                    Write-Log "Removed temporary file for chunk $chunkId - $tempFilePath" -Level VERBOSE
                 }
             }
             
