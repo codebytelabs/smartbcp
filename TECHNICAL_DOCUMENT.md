@@ -1,4 +1,4 @@
-# SmartBCP Technical Documentation
+  # SmartBCP Technical Documentation
 
 This document provides technical details about the SmartBCP utility, its architecture, design decisions, and implementation details.
 
@@ -246,13 +246,13 @@ Two main chunking strategies are implemented:
 Chunking behavior can be controlled through configuration parameters:
 
 - `EnableChunking`: Enables/disables the chunking feature
-- `MaxChunkSizeMB`: Maximum size for each chunk (default: 200MB)
-- `ChunkingThresholdMB`: Minimum table size to activate chunking (default: 500MB)
+- `MaxChunkSizeMB`: Maximum size for each chunk (default: 50MB)
+- `ChunkingThresholdMB`: Minimum table size to activate chunking (default: 100MB)
 
 The chunking algorithm now uses both size-based and row-based constraints to determine the optimal number of chunks:
 
 1. **Size-based chunking**: Divides the table based on the `MaxChunkSizeMB` parameter
-2. **Row-based chunking**: Ensures no chunk exceeds 100,000 rows (configurable)
+2. **Row-based chunking**: Ensures no chunk exceeds 50,000 rows (configurable)
 3. **Optimal chunking**: Uses the larger of the two calculations to ensure both constraints are met
 
 ### Chunking Workflow

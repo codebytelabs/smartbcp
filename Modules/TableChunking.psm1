@@ -457,7 +457,7 @@ function Get-OptimalChunkCount {
         [double]$MaxChunkSizeMB,
         [int]$MaxParallelChunks,
         [int]$RowCount,
-        [int]$MaxRowsPerChunk = 100000
+        [int]$MaxRowsPerChunk = 50000
     )
     
     # Calculate how many chunks we need based on table size
