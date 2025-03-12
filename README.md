@@ -43,6 +43,9 @@ SmartBCP is a PowerShell utility for efficient SQL Server database migration usi
 | BCPFormat | BCP format to use: native, char, or widechar | native |
 | TempPath | Path for temporary files | .\Temp |
 | BatchSize | Number of rows to process in a single batch during import | 10000 |
+| EnableChunking | Whether to enable table chunking for large tables | $true |
+| MaxChunkSizeMB | Maximum size in MB for each chunk | 200 |
+| ChunkingThresholdMB | Minimum table size in MB to activate chunking | 500 |
 | SourceCredential | SQL credentials for source database connection | (Windows auth) |
 | TargetCredential | SQL credentials for target database connection | (Windows auth) |
 

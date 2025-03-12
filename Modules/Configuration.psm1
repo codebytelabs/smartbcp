@@ -77,6 +77,19 @@ function Convert-ConfigToParameters {
         $params.Add("BatchSize", $Config.batchSize)
     }
     
+    # Handle chunking parameters
+    if (Get-Member -InputObject $Config -Name "enableChunking" -MemberType Properties) {
+        $params.Add("EnableChunking", $Config.enableChunking)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "maxChunkSizeMB" -MemberType Properties) {
+        $params.Add("MaxChunkSizeMB", $Config.maxChunkSizeMB)
+    }
+    
+    if (Get-Member -InputObject $Config -Name "chunkingThresholdMB" -MemberType Properties) {
+        $params.Add("ChunkingThresholdMB", $Config.chunkingThresholdMB)
+    }
+    
     if ((Get-Member -InputObject $Config -Name "includeSchemas" -MemberType Properties) -and ($Config.includeSchemas.Count -gt 0)) {
         $params.Add("IncludeSchemas", $Config.includeSchemas)
     }

@@ -47,6 +47,15 @@ function Start-SmartBCP {
         [int]$BatchSize = 10000,
         
         [Parameter(Mandatory=$false)]
+        [bool]$EnableChunking = $true,
+        
+        [Parameter(Mandatory=$false)]
+        [int]$MaxChunkSizeMB = 200,
+        
+        [Parameter(Mandatory=$false)]
+        [int]$ChunkingThresholdMB = 500,
+        
+        [Parameter(Mandatory=$false)]
         [System.Management.Automation.PSCredential]$SourceCredential,
         
         [Parameter(Mandatory=$false)]
@@ -180,6 +189,9 @@ function Start-SmartBCP {
             TempFilePath = $tempDir
             BCPFormat = $BCPFormat
             BatchSize = $BatchSize
+            EnableChunking = $EnableChunking
+            MaxChunkSizeMB = $MaxChunkSizeMB
+            ChunkingThresholdMB = $ChunkingThresholdMB
             SourceCredential = $SourceCredential
             TargetCredential = $TargetCredential
         }

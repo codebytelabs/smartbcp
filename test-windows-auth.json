@@ -10,9 +10,12 @@
   "bcpFormat": "native",
   "tempPath": "./Temp",
   "batchSize": 10000,
+  "enableChunking": true,
+  "maxChunkSizeMB": 200,
+  "chunkingThresholdMB": 500,
   "manageForeignKeys": true,
   "truncateTargetTables": false,
-  "includeSchemas": [], 
+  "includeSchemas": [],
   "excludeSchemas": [],
   "includeTables": [],
   "excludeTables": []

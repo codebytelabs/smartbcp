@@ -204,6 +204,68 @@ The modular architecture allows for easy extension:
 - **Error Messages**: Review error messages in the log files
 - **Database Errors**: Check SQL Server error logs
 
+## Table Chunking
+
+The Table Chunking feature optimizes the migration of large tables by breaking them into smaller, more manageable chunks:
+
+### Table Chunking Module (TableChunking.psm1)
+
+The Table Chunking module provides functionality to analyze tables and determine optimal chunking strategies:
+
+- Table size analysis
+- Key column identification (primary keys, identity columns)
+- Chunk size calculation
+- Query generation for chunked exports
+
+Key functions:
+- `Get-TableSize`: Determines the size of a table in MB
+- `Get-TableKeyColumn`: Identifies suitable key columns for chunking
+- `Get-KeyColumnRange`: Gets the min/max values for a key column
+- `Get-TableChunks`: Generates chunks based on table analysis
+- `Get-OptimalChunkCount`: Calculates optimal number of chunks
+- `Get-ChunkedExportQuery`: Generates SQL queries for chunked exports
+
+### Chunking Strategies
+
+Two main chunking strategies are implemented:
+
+1. **Key-based Chunking**:
+   - Uses primary key or identity column
+   - Divides key range into equal chunks
+   - Generates WHERE clauses for each chunk
+   - Most efficient for tables with numeric keys
+
+2. **Row-based Chunking**:
+   - Uses ROW_NUMBER() function
+   - Divides rows into equal chunks
+   - Generates queries with row number filters
+   - Fallback for tables without suitable keys
+
+### Chunking Configuration
+
+Chunking behavior can be controlled through configuration parameters:
+
+- `EnableChunking`: Enables/disables the chunking feature
+- `MaxChunkSizeMB`: Maximum size for each chunk (default: 200MB)
+- `ChunkingThresholdMB`: Minimum table size to activate chunking (default: 500MB)
+
+### Chunking Workflow
+
+1. Analyze table size
+2. If table exceeds threshold, identify key column
+3. Calculate optimal chunk count
+4. Generate chunks based on key or row strategy
+5. Process each chunk in parallel
+6. Aggregate results
+
+### Chunking Benefits
+
+- Reduced memory usage during migration
+- Improved disk I/O performance
+- Better parallelization
+- Ability to handle very large tables
+- Reduced risk of timeouts or failures
+
 ## Future Improvements
 
 - **Schema Creation**: Add support for creating schema in target database
@@ -211,3 +273,5 @@ The modular architecture allows for easy extension:
 - **Incremental Migration**: Support for incremental data migration
 - **GUI Interface**: Add graphical user interface
 - **Scheduled Migration**: Support for scheduled migration jobs
+- **Advanced Chunking**: Implement more sophisticated chunking strategies
+- **Resumable Migration**: Support for resuming failed migrations

@@ -6,21 +6,24 @@
   "authentication": {
     "type": "sql",
     "source": {
-      "username": "localadmin",
-      "password": "Harsha@2792025"
+      "username": "sa",
+      "password": "P@ssw0rd"
     },
     "target": {
-      "username": "localadmin",
-      "password": "Harsha@2792025"
+      "username": "sa",
+      "password": "P@ssw0rd"
     }
   },
-  "parallelTasks": 16,
+  "parallelTasks": 4,
   "bcpFormat": "native",
   "tempPath": "./Temp",
-  "batchSize": 20000,
+  "batchSize": 10000,
+  "enableChunking": true,
+  "maxChunkSizeMB": 200,
+  "chunkingThresholdMB": 500,
   "manageForeignKeys": true,
-  "truncateTargetTables": true,
-  "includeSchemas": [], 
+  "truncateTargetTables": false,
+  "includeSchemas": [],
   "excludeSchemas": [],
   "includeTables": [],
   "excludeTables": []
