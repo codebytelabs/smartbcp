@@ -360,7 +360,7 @@ function Migrate-TableData {
                                                       -MaxChunkSizeMB $MigrationParams.MaxChunkSizeMB `
                                                       -MaxParallelChunks $maxParallelChunks `
                                                       -RowCount $tableSize.RowCount `
-                                                      -MaxRowsPerChunk 50000
+                                                      -MaxRowsPerChunk 10000
                     
                     Write-Log "Creating $chunkCount chunks for table $fullTableName" -Level INFO
                     
